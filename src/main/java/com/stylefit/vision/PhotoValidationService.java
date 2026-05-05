@@ -27,37 +27,42 @@ public class PhotoValidationService {
 	private final double minBrightness;
 	private final double maxBrightness;
 	private final float faceScoreThreshold;
+	private final double minFaceAreaRatio;
 
 	public PhotoValidationService(
 		@Value("${stylefit.vision.yunet-model}") Resource yunetModel,
 		@Value("${stylefit.vision.min-brightness}") double minBrightness,
 		@Value("${stylefit.vision.max-brightness}") double maxBrightness,
-		@Value("${stylefit.vision.face-score-threshold}") float faceScoreThreshold
+		@Value("${stylefit.vision.face-score-threshold}") float faceScoreThreshold,
+		@Value("${stylefit.vision.min-face-area-ratio}") double minFaceAreaRatio
 	) throws IOException {
 		this.yunetModelPath = copyResourceToTempFile(yunetModel);
 		this.minBrightness = minBrightness;
 		this.maxBrightness = maxBrightness;
 		this.faceScoreThreshold = faceScoreThreshold;
+		this.minFaceAreaRatio = minFaceAreaRatio;
 	}
 
 	public PhotoValidationResponse validate(MultipartFile file) throws IOException {
 		if (file.isEmpty()) {
-			return new PhotoValidationResponse(false, 0, 0, List.of("사진 파일을 첨부해주세요."));
+			return new PhotoValidationResponse(false, 0, 0, 0, List.of("사진 파일을 첨부해주세요."));
 		}
 
 		Mat image = decodeImage(file);
 		if (image.empty()) {
-			return new PhotoValidationResponse(false, 0, 0, List.of("이미지 파일을 읽을 수 없습니다."));
+			return new PhotoValidationResponse(false, 0, 0, 0, List.of("이미지 파일을 읽을 수 없습니다."));
 		}
 
-		int faceCount = detectFaceCount(image);
+		FaceDetectionResult faceDetectionResult = detectFaces(image);
 		double brightness = calculateBrightness(image);
 		List<String> warnings = new ArrayList<>();
 
-		if (faceCount == 0) {
+		if (faceDetectionResult.faceCount() == 0) {
 			warnings.add("얼굴이 보이지 않습니다.");
-		} else if (faceCount > 1) {
+		} else if (faceDetectionResult.faceCount() > 1) {
 			warnings.add("한 명만 촬영된 사진을 업로드해주세요.");
+		} else if (faceDetectionResult.largestFaceAreaRatio() < minFaceAreaRatio) {
+			warnings.add("얼굴이 너무 작게 촬영되었습니다. 얼굴이 더 크게 보이도록 다시 촬영해주세요.");
 		}
 
 		if (brightness < minBrightness) {
@@ -66,7 +71,13 @@ public class PhotoValidationService {
 			warnings.add("사진이 너무 밝습니다.");
 		}
 
-		return new PhotoValidationResponse(warnings.isEmpty(), faceCount, brightness, warnings);
+		return new PhotoValidationResponse(
+			warnings.isEmpty(),
+			faceDetectionResult.faceCount(),
+			faceDetectionResult.largestFaceAreaRatio(),
+			brightness,
+			warnings
+		);
 	}
 
 	private Mat decodeImage(MultipartFile file) throws IOException {
@@ -74,7 +85,7 @@ public class PhotoValidationService {
 		return Imgcodecs.imdecode(bytes, Imgcodecs.IMREAD_COLOR);
 	}
 
-	private int detectFaceCount(Mat image) {
+	private FaceDetectionResult detectFaces(Mat image) {
 		FaceDetectorYN detector = FaceDetectorYN.create(
 			yunetModelPath.toString(),
 			"",
@@ -86,7 +97,22 @@ public class PhotoValidationService {
 
 		Mat faces = new Mat();
 		detector.detect(image, faces);
-		return faces.rows();
+		return new FaceDetectionResult(faces.rows(), calculateLargestFaceAreaRatio(faces, image));
+	}
+
+	private double calculateLargestFaceAreaRatio(Mat faces, Mat image) {
+		if (faces.empty()) {
+			return 0;
+		}
+
+		double largestFaceArea = 0;
+		for (int i = 0; i < faces.rows(); i++) {
+			double width = faces.get(i, 2)[0];
+			double height = faces.get(i, 3)[0];
+			largestFaceArea = Math.max(largestFaceArea, width * height);
+		}
+
+		return largestFaceArea / (image.cols() * image.rows());
 	}
 
 	private double calculateBrightness(Mat image) {
@@ -105,5 +131,11 @@ public class PhotoValidationService {
 		}
 
 		return tempFile;
+	}
+
+	private record FaceDetectionResult(
+		int faceCount,
+		double largestFaceAreaRatio
+	) {
 	}
 }
