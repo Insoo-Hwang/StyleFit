@@ -27,11 +27,14 @@ public class AnonymousCookieFilter extends OncePerRequestFilter {
 
         if (userId == null) {
             userId = UUID.randomUUID().toString();
+            boolean secure = "https".equalsIgnoreCase(request.getHeader("X-Forwarded-Proto"))
+                    || request.isSecure();
             ResponseCookie cookie = ResponseCookie.from(COOKIE_NAME, userId)
                     .httpOnly(true)
                     .path("/")
                     .maxAge(MAX_AGE_SECONDS)
-                    .sameSite("Strict")
+                    .sameSite("Lax")
+                    .secure(secure)
                     .build();
             response.addHeader("Set-Cookie", cookie.toString());
         }
