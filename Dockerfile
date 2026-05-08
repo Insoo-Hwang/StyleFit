@@ -7,17 +7,11 @@ COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 
 COPY frontend/ ./
-
-# vite.config.js outDir = '../src/main/resources/static'
-# → output lands at /app/src/main/resources/static
 RUN npm run build
-
-# 확인용 로그
-RUN ls -al /app/src/main/resources/static
 
 
 # ── Stage 2: Backend build ────────────────────────────────────────────────────
-FROM eclipse-temurin:17-jdk-alpine AS backend-build
+FROM eclipse-temurin:17-jdk AS backend-build
 
 WORKDIR /app
 
@@ -32,14 +26,11 @@ COPY src/ src/
 
 COPY --from=frontend-build /app/src/main/resources/static/ src/main/resources/static/
 
-# 확인용 로그
-RUN ls -al src/main/resources/static
-
 RUN ./gradlew bootJar --no-daemon -x test
 
 
 # ── Stage 3: Runtime ──────────────────────────────────────────────────────────
-FROM eclipse-temurin:17-jre-alpine
+FROM eclipse-temurin:17-jre
 
 WORKDIR /app
 
