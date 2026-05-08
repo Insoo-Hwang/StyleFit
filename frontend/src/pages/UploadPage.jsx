@@ -1,36 +1,42 @@
 import { useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import Spinner from '../components/Spinner.jsx'
+import './UploadPage.css'
 
-const MAX_FILES = 3
+const MAX = 3
 
 export default function UploadPage() {
   const navigate = useNavigate()
-  const [files, setFiles] = useState([])
-  const [previews, setPreviews] = useState([])
+  const [photos, setPhotos] = useState([])   // { file, url }[]
   const [warnings, setWarnings] = useState([])
   const [uploading, setUploading] = useState(false)
+  const [isDrag, setIsDrag] = useState(false)
   const fileInputRef = useRef(null)
 
-  const handleFileChange = (e) => {
-    const selected = Array.from(e.target.files).slice(0, MAX_FILES)
-    setFiles(selected)
-    setPreviews(selected.map(f => URL.createObjectURL(f)))
+  const addFiles = (fileList) => {
+    const incoming = Array.from(fileList)
+      .filter(f => f.type.startsWith('image/'))
+      .slice(0, MAX - photos.length)
+    if (incoming.length === 0) return
+    setPhotos(prev => [...prev, ...incoming.map(f => ({ file: f, url: URL.createObjectURL(f) }))])
     setWarnings([])
   }
 
-  const removeFile = (index) => {
-    const nextFiles = files.filter((_, i) => i !== index)
-    setFiles(nextFiles)
-    setPreviews(nextFiles.map(f => URL.createObjectURL(f)))
+  const removePhoto = (i) => {
+    setPhotos(prev => prev.filter((_, idx) => idx !== i))
+  }
+
+  const handleDrop = (e) => {
+    e.preventDefault()
+    setIsDrag(false)
+    if (e.dataTransfer?.files) addFiles(e.dataTransfer.files)
   }
 
   const handleSubmit = async () => {
-    if (files.length === 0) return
+    if (photos.length === 0 || uploading) return
     setUploading(true)
 
     const formData = new FormData()
-    files.forEach(f => formData.append('files', f))
+    photos.forEach(p => formData.append('files', p.file))
 
     try {
       const res = await fetch('/api/analysis/submit-photo', { method: 'POST', body: formData })
@@ -47,8 +53,7 @@ export default function UploadPage() {
         navigate('/result', { state: { result: data.result, reportImageUrl: data.reportImageUrl } })
       } else if (data.status === 'VALIDATION_FAILED') {
         setWarnings(data.validationWarnings ?? [])
-        setFiles([])
-        setPreviews([])
+        setPhotos([])
         setUploading(false)
         if (fileInputRef.current) fileInputRef.current.value = ''
       }
@@ -58,56 +63,136 @@ export default function UploadPage() {
     }
   }
 
-  if (uploading) {
-    return (
-      <div className="center-screen">
-        <Spinner />
-        <p className="muted">사진을 분석하고 있습니다...</p>
-        <p className="muted small">잠시만 기다려주세요</p>
-      </div>
-    )
-  }
+  const canSubmit = photos.length > 0 && !uploading
 
   return (
-    <div className="page">
-      <h1 className="title">StyleFit</h1>
-      <p className="subtitle">퍼스널 컬러 진단</p>
+    <div className="upload-body">
+      <div className="upload-frame">
+        <main className="upload-page">
 
-      {warnings.length > 0 && (
-        <div className="warning-box">
-          {warnings.map((w, i) => <p key={i}>⚠ {w}</p>)}
-        </div>
-      )}
-
-      <div className="upload-area" onClick={() => fileInputRef.current?.click()}>
-        <span className="upload-icon">📷</span>
-        <p>사진을 선택하세요 (최대 {MAX_FILES}장)</p>
-        <p className="small muted">클릭하여 업로드</p>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          multiple
-          hidden
-          onChange={handleFileChange}
-        />
-      </div>
-
-      {previews.length > 0 && (
-        <div className="preview-grid">
-          {previews.map((src, i) => (
-            <div key={i} className="preview-item">
-              <img src={src} alt={`미리보기 ${i + 1}`} />
-              <button className="remove-btn" onClick={() => removeFile(i)}>✕</button>
-              <span className="photo-badge">{i + 1}</span>
+          {uploading ? (
+            <div className="upload-loading">
+              <div className="upload-spinner" />
+              <p className="upload-loading-text">사진을 분석하고 있습니다…</p>
+              <p className="upload-loading-sub">잠시만 기다려주세요</p>
             </div>
-          ))}
-        </div>
-      )}
+          ) : (
+            <>
+              <header className="upload-head">
+                <div className="upload-top-row">
+                  <button
+                    className="upload-back"
+                    onClick={() => navigate('/home')}
+                    aria-label="뒤로"
+                  >
+                    ←
+                  </button>
+                  <span>back to menu</span>
+                </div>
+                <h1 className="upload-brand" onClick={() => navigate('/')} style={{ cursor: 'pointer' }}>STYLE<span className="dot">.</span></h1>
+                <p className="upload-crumb">— 퍼스널 컬러 진단 —</p>
+              </header>
 
-      <button className="submit-btn" disabled={files.length === 0} onClick={handleSubmit}>
-        분석 시작하기 {files.length > 0 && `(${files.length}장)`}
-      </button>
+              <div className="upload-section-title">사 진 첨 부</div>
+
+              {/* Drop zone */}
+              <div
+                className={`upload-drop${isDrag ? ' is-drag' : ''}`}
+                onClick={() => fileInputRef.current?.click()}
+                onDragEnter={(e) => { e.preventDefault(); setIsDrag(true) }}
+                onDragOver={(e) => { e.preventDefault(); setIsDrag(true) }}
+                onDragLeave={(e) => { e.preventDefault(); setIsDrag(false) }}
+                onDrop={handleDrop}
+              >
+                <div className="upload-drop-icon" aria-hidden="true">
+                  <svg viewBox="0 0 40 40" fill="none">
+                    <rect x="5" y="12" width="30" height="22" rx="3" stroke="currentColor" strokeWidth="1.6" />
+                    <rect x="15" y="8" width="10" height="4" stroke="currentColor" strokeWidth="1.6" />
+                    <circle cx="20" cy="23" r="6" stroke="currentColor" strokeWidth="1.6" />
+                    <circle cx="20" cy="23" r="2" fill="currentColor" />
+                    <circle cx="30" cy="17" r="1" fill="currentColor" />
+                  </svg>
+                </div>
+                <p className="upload-drop-title">
+                  사진을 선택하세요 <em>최대 {MAX}장</em>
+                </p>
+                <p className="upload-drop-hint">탭하거나 끌어다 놓으세요.</p>
+              </div>
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                hidden
+                onChange={(e) => { addFiles(e.target.files); e.target.value = '' }}
+              />
+
+              {/* Photo grid */}
+              <div className="upload-grid">
+                {Array.from({ length: MAX }).map((_, i) => (
+                  photos[i] ? (
+                    <div key={i} className="upload-thumb">
+                      <img src={photos[i].url} alt={`첨부 사진 ${i + 1}`} />
+                      <span className="upload-thumb-num">{i + 1}</span>
+                      <button
+                        className="upload-thumb-rm"
+                        onClick={(e) => { e.stopPropagation(); removePhoto(i) }}
+                        aria-label={`사진 ${i + 1} 삭제`}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ) : (
+                    <div
+                      key={i}
+                      className="upload-thumb empty"
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      +
+                    </div>
+                  )
+                ))}
+              </div>
+
+              {/* Warnings */}
+              {warnings.length > 0 && (
+                <div className="upload-warning">
+                  {warnings.map((w, i) => <p key={i}>⚠ {w}</p>)}
+                </div>
+              )}
+
+              {/* Tips */}
+              <aside className="upload-tips" aria-label="촬영 팁">
+                <ul>
+                  <li>자연광에서 정면 얼굴이 잘 보이게.</li>
+                  <li>화장은 옅게, 머리는 이마가 보이도록.</li>
+                  <li>한 장 이상 첨부하면 분석을 시작할 수 있어요.</li>
+                </ul>
+              </aside>
+
+              {/* CTA */}
+              <div className="upload-cta-wrap">
+                <button
+                  className="upload-cta"
+                  type="button"
+                  disabled={!canSubmit}
+                  onClick={handleSubmit}
+                >
+                  분석 시작하기
+                  {canSubmit && <span className="upload-cta-arrow">→</span>}
+                </button>
+                <div className="upload-helper">
+                  {photos.length > 0
+                    ? `${photos.length}/${MAX}장 첨부됨 — 분석 준비 완료`
+                    : '사진을 1장 이상 첨부해 주세요.'}
+                </div>
+              </div>
+            </>
+          )}
+
+        </main>
+      </div>
     </div>
   )
 }

@@ -1,0 +1,170 @@
+:root {
+  --ink: #1c1c1a;
+  --ink-soft: #4a4a46;
+  --pencil: #8a8a82;
+  --paper: #f4f1e8;
+  --green-deep: oklch(0.32 0.06 155);
+  --green-darker: oklch(0.22 0.05 155);
+}
+
+.entry-body {
+  background: #e9e3d2;
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  justify-content: center;
+  -webkit-font-smoothing: antialiased;
+  font-family: 'Gowun Batang', 'Nanum Myeongjo', serif;
+}
+
+.entry-frame {
+  width: 100%;
+  max-width: 540px;
+  background: var(--paper);
+  min-height: 100vh;
+  min-height: 100dvh;
+  box-shadow: 0 0 0 1px rgba(28, 28, 26, 0.08);
+  position: relative;
+}
+
+.entry-page {
+  position: relative;
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  padding:
+    calc(env(safe-area-inset-top, 0px) + 28px)
+    0
+    calc(env(safe-area-inset-bottom, 0px) + 22px);
+  overflow: hidden;
+}
+
+.entry-pole {
+  position: absolute;
+  top: 40px;
+  bottom: 110px;
+  width: 14px;
+  pointer-events: none;
+  opacity: 0.85;
+}
+
+.entry-pole.left {
+  left: 0;
+  background-image: repeating-linear-gradient(
+    180deg,
+    var(--green-deep) 0 14px,
+    transparent 14px 28px
+  );
+}
+
+.entry-pole.right {
+  right: 0;
+  background-image: repeating-linear-gradient(
+    180deg,
+    var(--ink) 0 14px,
+    transparent 14px 28px
+  );
+}
+
+.entry-hero {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 24px 36px;
+  gap: 20px;
+}
+
+.entry-mark {
+  width: 30px;
+  height: 30px;
+}
+
+.entry-wordmark {
+  font-family: 'Black Han Sans', 'Nanum Myeongjo', serif;
+  font-size: clamp(48px, 16vw, 64px);
+  line-height: 0.95;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+.entry-wordmark .dot {
+  color: var(--green-deep);
+}
+
+.entry-rule {
+  width: 40px;
+  height: 1.5px;
+  background: var(--ink);
+}
+
+.entry-lede {
+  font-family: 'Nanum Myeongjo', serif;
+  font-size: clamp(16px, 4.6vw, 18px);
+  line-height: 1.65;
+  color: var(--ink);
+  max-width: 22ch;
+  text-wrap: pretty;
+  margin: 0;
+}
+
+.entry-lede em {
+  font-style: normal;
+  color: var(--green-deep);
+  font-weight: 800;
+}
+
+.entry-tagline {
+  font-family: 'Caveat', cursive;
+  font-size: clamp(15px, 4.2vw, 17px);
+  color: var(--green-deep);
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 80 6'><path d='M0 3 Q 10 0 20 3 T 40 3 T 60 3 T 80 3' stroke='%23254e3a' stroke-width='1.2' fill='none'/></svg>");
+  background-repeat: repeat-x;
+  background-position: 0 100%;
+  background-size: 80px 6px;
+  padding-bottom: 6px;
+}
+
+.entry-cta-wrap {
+  padding: 0 28px;
+}
+
+.entry-cta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  height: 56px;
+  border-radius: 999px;
+  background: var(--green-deep);
+  color: var(--paper);
+  border: 1.5px solid var(--ink);
+  box-shadow: 3px 3px 0 var(--ink);
+  font-family: 'Gaegu', 'Nanum Myeongjo', serif;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  font-size: 18px;
+  cursor: pointer;
+  user-select: none;
+  transition: transform 80ms ease, box-shadow 80ms ease;
+}
+
+.entry-cta:active {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 var(--ink);
+}
+
+.entry-cta:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.entry-cta-arrow {
+  font-family: 'Caveat', cursive;
+  font-size: 22px;
+}
