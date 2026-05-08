@@ -1,5 +1,5 @@
 HELP.md
-.gradle
+.gradle     
 build/
 !gradle/wrapper/gradle-wrapper.jar
 !**/src/main/**/build/
@@ -35,3 +35,16 @@ out/
 
 ### VS Code ###
 .vscode/
+
+### Frontend (Node.js / React) ###
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+frontend/.env.local
+frontend/.env.*.local
+
+# Vite build output embedded into Spring Boot
+src/main/resources/static/
+
+### macOS ###
+.DS_Store

@@ -2,6 +2,7 @@ package com.stylefit.config;
 
 import java.util.List;
 
+import com.stylefit.auth.AnonymousCookieFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -9,6 +10,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.AnonymousAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -24,6 +26,7 @@ public class SecurityConfig {
 			.cors(cors -> cors.configurationSource(corsConfigurationSource()))
 			.headers(headers -> headers.frameOptions(frameOptions -> frameOptions.sameOrigin()))
 			.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+			.addFilterBefore(new AnonymousCookieFilter(), AnonymousAuthenticationFilter.class)
 			.authorizeHttpRequests(auth -> auth
 				.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 				.requestMatchers("/admin/**", "/internal/**").denyAll()
@@ -44,7 +47,7 @@ public class SecurityConfig {
 		configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
 		configuration.setAllowedHeaders(List.of("*"));
 		configuration.setExposedHeaders(List.of("Authorization"));
-		configuration.setAllowCredentials(false);
+		configuration.setAllowCredentials(true);
 
 		UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
 		source.registerCorsConfiguration("/**", configuration);
