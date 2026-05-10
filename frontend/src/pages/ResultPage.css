@@ -430,3 +430,37 @@
   color: var(--green-darker);
   margin: 0;
 }
+
+/* Paid report CTA — wireframe S8 */
+.result-paid-cta-wrap {
+  padding: 8px 24px 32px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.result-paid-cta {
+  width: 100%;
+  height: 64px;
+  border-radius: 12px;
+  border: 2px solid var(--ink);
+  background: var(--paper-card);
+  font-family: 'Nanum Myeongjo', serif;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+  cursor: pointer;
+  transition: opacity 0.1s;
+}
+
+.result-paid-cta:active {
+  opacity: 0.75;
+}
+
+.result-paid-cta-sub {
+  font-size: 10.5px;
+  color: #888;
+  text-align: center;
+  margin: 0;
+}

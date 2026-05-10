@@ -183,6 +183,17 @@ export default function ResultPage() {
             </button>
           </div>
 
+          <div className="result-paid-cta-wrap">
+            <button
+              className="result-paid-cta"
+              type="button"
+              onClick={() => navigate('/phone')}
+            >
+              상세 리포트 보기 →
+            </button>
+            <p className="result-paid-cta-sub">990원 · 베스트 컬러 · 헤어 · 코디 · 쇼핑 검색어 포함</p>
+          </div>
+
           <p className="result-footnote">
             쿠키가 유지되는 동안 이 페이지로 직접 접속해도 결과가 표시됩니다.
           </p>
