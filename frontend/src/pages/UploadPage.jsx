@@ -86,8 +86,6 @@ export default function UploadPage() {
 
       if (data.status === 'COMPLETED') {
         navigate('/result', { state: { result: data.result, reportImageUrl: data.reportImageUrl } })
-      } else if (data.status === 'PROCESSING') {
-        navigate('/loading')
       } else if (data.status === 'VALIDATION_FAILED') {
         setWarnings(data.validationWarnings ?? [])
         setPhotos([])
