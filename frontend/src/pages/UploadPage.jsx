@@ -3,6 +3,36 @@ import { useNavigate } from 'react-router-dom'
 import './UploadPage.css'
 
 const MAX = 3
+const MAX_DIM = 1280
+
+// 업로드 전에 이미지를 캔버스로 리사이즈/JPEG 압축
+async function resizeImage(file) {
+  const url = URL.createObjectURL(file)
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const i = new Image()
+      i.onload = () => resolve(i)
+      i.onerror = () => reject(new Error('이미지 로드 실패'))
+      i.src = url
+    })
+    let { width, height } = img
+    if (width > MAX_DIM || height > MAX_DIM) {
+      const scale = Math.min(MAX_DIM / width, MAX_DIM / height)
+      width = Math.round(width * scale)
+      height = Math.round(height * scale)
+    }
+    const canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+    canvas.getContext('2d').drawImage(img, 0, 0, width, height)
+    const blob = await new Promise((resolve, reject) => {
+      canvas.toBlob(b => b ? resolve(b) : reject(new Error('canvas.toBlob 실패')), 'image/jpeg', 0.85)
+    })
+    return new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' })
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+}
 
 export default function UploadPage() {
   const navigate = useNavigate()
@@ -35,11 +65,16 @@ export default function UploadPage() {
     if (photos.length === 0 || uploading) return
     setUploading(true)
 
-    const formData = new FormData()
-    photos.forEach(p => formData.append('files', p.file))
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 60000)
 
     try {
-      const res = await fetch('/api/analysis/submit-photo', { method: 'POST', body: formData })
+      const resized = await Promise.all(photos.map(p => resizeImage(p.file)))
+      const formData = new FormData()
+      resized.forEach(f => formData.append('files', f))
+
+      const res = await fetch('/api/analysis/submit-photo', { method: 'POST', body: formData, signal: controller.signal })
+      clearTimeout(timeout)
 
       if (res.status === 409) {
         setWarnings(['이미 처리 중입니다. 잠시 후 다시 시도해주세요.'])
@@ -56,9 +91,13 @@ export default function UploadPage() {
         setPhotos([])
         setUploading(false)
         if (fileInputRef.current) fileInputRef.current.value = ''
+      } else {
+        setWarnings(['오류가 발생했습니다. 다시 시도해주세요.'])
+        setUploading(false)
       }
     } catch {
-      setWarnings(['서버 연결에 실패했습니다.'])
+      clearTimeout(timeout)
+      setWarnings(['서버에 문제가 발생했습니다. 잠시 후 다시 시도해주세요.'])
       setUploading(false)
     }
   }

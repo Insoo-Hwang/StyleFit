@@ -23,10 +23,9 @@ import org.springframework.web.multipart.MultipartFile;
 @Service
 public class PhotoValidationService {
 
-	private final Path yunetModelPath;
+	private final FaceDetectorYN detector;
 	private final double minBrightness;
 	private final double maxBrightness;
-	private final float faceScoreThreshold;
 	private final double minFaceAreaRatio;
 
 	public PhotoValidationService(
@@ -36,10 +35,11 @@ public class PhotoValidationService {
 		@Value("${stylefit.vision.face-score-threshold}") float faceScoreThreshold,
 		@Value("${stylefit.vision.min-face-area-ratio}") double minFaceAreaRatio
 	) throws IOException {
-		this.yunetModelPath = copyResourceToTempFile(yunetModel);
+		nu.pattern.OpenCV.loadLocally();
+		Path modelPath = copyResourceToTempFile(yunetModel);
+		this.detector = FaceDetectorYN.create(modelPath.toString(), "", new Size(320, 320), faceScoreThreshold, 0.3f, 5000);
 		this.minBrightness = minBrightness;
 		this.maxBrightness = maxBrightness;
-		this.faceScoreThreshold = faceScoreThreshold;
 		this.minFaceAreaRatio = minFaceAreaRatio;
 	}
 
@@ -85,19 +85,21 @@ public class PhotoValidationService {
 		return Imgcodecs.imdecode(bytes, Imgcodecs.IMREAD_COLOR);
 	}
 
-	private FaceDetectionResult detectFaces(Mat image) {
-		FaceDetectorYN detector = FaceDetectorYN.create(
-			yunetModelPath.toString(),
-			"",
-			new Size(image.cols(), image.rows()),
-			faceScoreThreshold,
-			0.3f,
-			5000
-		);
-
+	private synchronized FaceDetectionResult detectFaces(Mat image) {
+		Mat input = resizeForDetection(image);
+		detector.setInputSize(new Size(input.cols(), input.rows()));
 		Mat faces = new Mat();
-		detector.detect(image, faces);
-		return new FaceDetectionResult(faces.rows(), calculateLargestFaceAreaRatio(faces, image));
+		detector.detect(input, faces);
+		return new FaceDetectionResult(faces.rows(), calculateLargestFaceAreaRatio(faces, input));
+	}
+
+	private Mat resizeForDetection(Mat image) {
+		int maxDim = 640;
+		if (image.cols() <= maxDim && image.rows() <= maxDim) return image;
+		double scale = Math.min((double) maxDim / image.cols(), (double) maxDim / image.rows());
+		Mat resized = new Mat();
+		Imgproc.resize(image, resized, new Size((int)(image.cols() * scale), (int)(image.rows() * scale)));
+		return resized;
 	}
 
 	private double calculateLargestFaceAreaRatio(Mat faces, Mat image) {
