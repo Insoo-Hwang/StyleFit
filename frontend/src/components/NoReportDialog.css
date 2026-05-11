@@ -1,0 +1,64 @@
+.nrd-backdrop {
+  position: fixed; inset: 0; z-index: 100;
+  background: rgba(28, 28, 26, 0.45);
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+  animation: nrd-fade 160ms ease-out;
+}
+@keyframes nrd-fade { from { opacity: 0; } to { opacity: 1; } }
+
+.nrd-card {
+  width: 100%; max-width: 340px;
+  background: var(--paper);
+  border: 1.5px solid var(--green-deep);
+  border-radius: 8px;
+  padding: 28px 22px 22px;
+  text-align: center;
+  position: relative;
+  box-shadow: 4px 4px 0 var(--green-darker);
+  animation: nrd-pop 180ms ease-out;
+}
+@keyframes nrd-pop {
+  from { transform: translateY(8px) scale(0.96); opacity: 0; }
+  to   { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+.nrd-icon {
+  width: 64px; height: 64px; margin: 0 auto 14px;
+  border: 1.4px dashed var(--green-mid); border-radius: 999px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--green-deep); background: var(--paper-card);
+}
+.nrd-icon svg { width: 32px; height: 32px; }
+
+.nrd-title {
+  margin: 0 0 6px;
+  font-weight: 900; font-size: 18px; letter-spacing: -0.02em;
+  color: var(--green-darker);
+}
+.nrd-sub {
+  margin: 0 0 22px;
+  font-weight: 600; font-size: 14px; line-height: 1.55;
+  color: var(--ink-soft);
+}
+
+.nrd-actions {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+}
+.nrd-btn {
+  height: 48px; border-radius: 999px;
+  font-weight: 700; font-size: 14px; letter-spacing: 0.02em;
+  cursor: pointer; transition: background 120ms;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+}
+.nrd-btn.ghost {
+  background: transparent; color: var(--green-darker);
+  border: 1.4px dashed var(--green-mid);
+}
+.nrd-btn.ghost:hover { background: var(--paper-card); }
+.nrd-btn.primary {
+  background: var(--green-deep); color: var(--paper);
+  border: 1.5px solid var(--green-darker);
+}
+.nrd-btn.primary:hover { background: var(--green-darker); }
+.nrd-arrow { font-family: 'Caveat', cursive; font-size: 18px; }

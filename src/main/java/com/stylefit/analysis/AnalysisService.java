@@ -10,7 +10,6 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -22,26 +21,61 @@ public class AnalysisService {
     private final PhotoValidationService photoValidationService;
 
     private static final String PRODUCT_CODE = "PERSONAL_COLOR_DIAGNOSIS";
-    private static final int MAX_PHOTOS = 3;
 
     // -----------------------------------------------------------------------
     // Mock 데이터 — Python AI 서버 연동 시 교체
     // -----------------------------------------------------------------------
+    private static final long MOCK_AI_DELAY_MS = 15_000L;
+
     private static final String MOCK_RESULT_JSON = """
             {
-              "personalColor": "SPRING_WARM",
-              "tone": "WARM",
-              "skinUndertone": "YELLOW_PEACH",
-              "bestColors": ["#FFD700", "#FF8C00", "#FFA07A", "#FFDAB9", "#F4A460"],
-              "worstColors": ["#708090", "#4682B4", "#6A5ACD", "#483D8B", "#2F4F4F"],
-              "description": "봄 웜톤입니다. 밝고 따뜻한 노란빛 계열 색상이 피부를 생기있게 만들어줍니다.",
-              "recommendedStyles": ["캐주얼", "로맨틱", "내추럴"],
-              "makeupTips": "코럴이나 피치 계열 립 컬러가 잘 어울립니다."
+              "personalColor": "쿨톤 · 윈터 계열",
+              "tagline": "딥 · 클리어 무드",
+              "heroLede": "차분하고 선명한 컬러가 얼굴 윤곽을 또렷하게 만들어줄 가능성이 높습니다.",
+              "mainType": "윈터",
+              "mainPercent": 80,
+              "secondaryType": "섬머",
+              "secondaryPercent": 20,
+              "bestColors": [
+                {"hex": "#3a3f44", "name": "차콜 그레이", "use": "상의 · 아우터 전반"},
+                {"hex": "#1b2a4a", "name": "딥 네이비", "use": "셔츠 · 데님"},
+                {"hex": "#1f3d2e", "name": "딥 그린", "use": "맨투맨 · 후드"}
+              ],
+              "worstColors": [
+                {"hex": "#f7c7d6", "name": "밝은 파스텔 핑크", "reason": "얼굴이 창백해 보일 수 있음"},
+                {"hex": "#c8e34a", "name": "형광 라임", "reason": "피부톤과 충돌"},
+                {"hex": "#f1d960", "name": "밝은 옐로우", "reason": "피부 노란기 강조"}
+              ],
+              "clothing": {
+                "top": ["차콜 니트", "네이비 옥스포드 셔츠", "딥그린 맨투맨", "블랙 미니멀 자켓"],
+                "bottom": ["인디고 데님", "차콜 슬랙스", "네이비 치노 팬츠", "블랙 조거 팬츠"]
+              },
+              "hair": {
+                "title": "투블럭 · 슬릭백",
+                "description": "선명하고 깔끔한 실루엣이 잘 맞습니다.",
+                "colorNote": "컬러: 내추럴 블랙 또는 다크 브라운 권장"
+              },
+              "accessories": "실버 시계 · 블랙 프레임 안경 · 실버 · 건메탈 목걸이",
+              "situations": [
+                {"name": "출근룩", "outfit": "차콜 슬랙스 + 네이비 셔츠 + 블랙 더비슈즈", "description": "깔끔하고 신뢰감 있는 인상. 실버 시계 포인트 추천."},
+                {"name": "데이트룩", "outfit": "딥그린 니트 + 인디고 데님 + 화이트 스니커즈", "description": "편안하면서 정돈된 분위기. 가벼운 무드의 데이트룩."},
+                {"name": "데일리룩", "outfit": "블랙 후드 + 차콜 조거 + 블랙 캡", "description": "편안한 데일리 무드. 미니멀하지만 톤이 잘 맞는 조합."}
+              ],
+              "shopKeywords": [
+                "차콜 니트 남성", "네이비 옥스포드 셔츠", "딥그린 맨투맨", "블랙 미니멀 자켓",
+                "인디고 슬림 데님", "실버 메탈 시계", "블랙 더비슈즈 남성", "투블럭 헤어 왁스",
+                "건메탈 목걸이 남성", "차콜 울 코트"
+              ],
+              "avoidRules": [
+                "밝은 파스텔 단색 상하의 세트는 피하세요",
+                "형광기 있는 색은 포인트 아이템으로도 피하세요",
+                "흰 셔츠 + 밝은 베이지 팬츠 조합은 칙칙해 보일 수 있습니다"
+              ]
             }
             """;
 
     private static final String MOCK_REPORT_IMAGE_URL =
-            "https://placehold.co/800x1200/FFD700/333333?text=StyleFit+Report";
+            "https://placehold.co/800x1200/1f3d2e/e7d8a8?text=STYLE+Report";
     // -----------------------------------------------------------------------
 
     /**
@@ -62,13 +96,9 @@ public class AnalysisService {
      *       (saveProcessing → [트랜잭션 종료] → AI 호출 → saveCompleted)
      */
     @Transactional
-    public AnalysisResponse submitPhoto(String cookieId, List<MultipartFile> files) {
-        if (files == null || files.isEmpty()) {
-            return AnalysisResponse.validationFailed(List.of("사진을 1장 이상 업로드해주세요."));
-        }
-        if (files.size() > MAX_PHOTOS) {
-            return AnalysisResponse.validationFailed(
-                    List.of("사진은 최대 " + MAX_PHOTOS + "장까지 업로드할 수 있습니다. (현재 " + files.size() + "장)"));
+    public AnalysisResponse submitPhoto(String cookieId, MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            return AnalysisResponse.validationFailed(List.of("사진을 1장 업로드해주세요."));
         }
 
         Optional<AnalysisResult> existing =
@@ -86,9 +116,9 @@ public class AnalysisService {
             // FAILED → 재시도 허용 (기존 레코드 재사용)
         }
 
-        List<String> allWarnings = validatePhotos(files);
-        if (!allWarnings.isEmpty()) {
-            return AnalysisResponse.validationFailed(allWarnings);
+        List<String> warnings = validatePhoto(file);
+        if (!warnings.isEmpty()) {
+            return AnalysisResponse.validationFailed(warnings);
         }
 
         AnalysisResult entity = existing.orElseGet(() -> AnalysisResult.of(cookieId));
@@ -112,28 +142,23 @@ public class AnalysisService {
     // Private helpers
     // -----------------------------------------------------------------------
 
-    private List<String> validatePhotos(List<MultipartFile> files) {
-        List<String> allWarnings = new ArrayList<>();
-        boolean multipleFiles = files.size() > 1;
-
-        for (int i = 0; i < files.size(); i++) {
-            try {
-                PhotoValidationResponse result = photoValidationService.validate(files.get(i));
-                if (!result.valid()) {
-                    String prefix = multipleFiles ? (i + 1) + "번 사진: " : "";
-                    result.warnings().forEach(w -> allWarnings.add(prefix + w));
-                }
-            } catch (IOException e) {
-                String prefix = multipleFiles ? (i + 1) + "번 사진: " : "";
-                allWarnings.add(prefix + "사진을 읽을 수 없습니다.");
-            }
+    private List<String> validatePhoto(MultipartFile file) {
+        try {
+            PhotoValidationResponse result = photoValidationService.validate(file);
+            return result.valid() ? List.of() : List.copyOf(result.warnings());
+        } catch (IOException e) {
+            return List.of("사진을 읽을 수 없습니다.");
         }
-
-        return allWarnings;
     }
 
     private String callAiAnalysis() {
         // TODO: Python AI 서버로 HTTP 요청 (RestClient)
+        // 실제 AI 처리 시간을 흉내내기 위해 잠깐 대기 — 프론트 로딩 UX 검증용
+        try {
+            Thread.sleep(MOCK_AI_DELAY_MS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
         return MOCK_RESULT_JSON;
     }
 

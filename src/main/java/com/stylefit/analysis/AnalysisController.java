@@ -10,8 +10,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.util.List;
-
 @RestController
 @RequestMapping("/api/analysis")
 @RequiredArgsConstructor
@@ -39,9 +37,9 @@ public class AnalysisController {
      */
     @PostMapping("/submit-photo")
     public ResponseEntity<AnalysisResponse> submitPhoto(
-            @RequestParam("files") List<MultipartFile> files,
+            @RequestParam("file") MultipartFile file,
             HttpServletRequest request) {
         String cookieId = (String) request.getAttribute(AnonymousCookieFilter.REQUEST_ATTR);
-        return ResponseEntity.ok(analysisService.submitPhoto(cookieId, files));
+        return ResponseEntity.ok(analysisService.submitPhoto(cookieId, file));
     }
 }

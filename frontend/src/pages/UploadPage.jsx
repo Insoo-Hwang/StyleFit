@@ -1,11 +1,13 @@
-import { useState, useRef } from 'react'
+import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import useReportCheck from '../hooks/useReportCheck.jsx'
 import './UploadPage.css'
 
-const MAX = 3
 const MAX_DIM = 1280
+const MAX_BYTES = 10 * 1024 * 1024            // 10MB
+const ACCEPTED_TYPES = ['image/jpeg', 'image/png']
+const ACCEPTED_EXT = /\.(jpe?g|png)$/i
 
-// 업로드 전에 이미지를 캔버스로 리사이즈/JPEG 압축
 async function resizeImage(file) {
   const url = URL.createObjectURL(file)
   try {
@@ -36,23 +38,36 @@ async function resizeImage(file) {
 
 export default function UploadPage() {
   const navigate = useNavigate()
-  const [photos, setPhotos] = useState([])   // { file, url }[]
-  const [warnings, setWarnings] = useState([])
-  const [uploading, setUploading] = useState(false)
+  const [photo, setPhoto] = useState(null)   // { file, url } | null
   const [isDrag, setIsDrag] = useState(false)
+  const [warning, setWarning] = useState('')
   const fileInputRef = useRef(null)
+  const { checkReport, dialog } = useReportCheck()
 
-  const addFiles = (fileList) => {
-    const incoming = Array.from(fileList)
-      .filter(f => f.type.startsWith('image/'))
-      .slice(0, MAX - photos.length)
-    if (incoming.length === 0) return
-    setPhotos(prev => [...prev, ...incoming.map(f => ({ file: f, url: URL.createObjectURL(f) }))])
-    setWarnings([])
+  const setFile = (file) => {
+    setPhoto(prev => {
+      if (prev) URL.revokeObjectURL(prev.url)
+      return { file, url: URL.createObjectURL(file) }
+    })
+    setWarning('')
   }
 
-  const removePhoto = (i) => {
-    setPhotos(prev => prev.filter((_, idx) => idx !== i))
+  const addFiles = (fileList) => {
+    const incoming = Array.from(fileList)[0]
+    if (!incoming) return
+
+    const typeOk = ACCEPTED_TYPES.includes(incoming.type) || ACCEPTED_EXT.test(incoming.name)
+    if (!typeOk) {
+      setWarning('JPG 또는 PNG 형식의 사진만 업로드할 수 있어요.')
+      return
+    }
+    if (incoming.size > MAX_BYTES) {
+      const mb = (incoming.size / 1024 / 1024).toFixed(1)
+      setWarning(`사진 용량은 최대 10MB까지 가능해요. (현재 ${mb}MB)`)
+      return
+    }
+
+    setFile(incoming)
   }
 
   const handleDrop = (e) => {
@@ -62,176 +77,166 @@ export default function UploadPage() {
   }
 
   const handleSubmit = async () => {
-    if (photos.length === 0 || uploading) return
-    setUploading(true)
+    if (!photo) return
 
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 60000)
-
+    // 한 번 진단 받은 사용자는 다시 분석하지 않고 DB에 저장된 결과를 바로 보여준다
     try {
-      const resized = await Promise.all(photos.map(p => resizeImage(p.file)))
-      const formData = new FormData()
-      resized.forEach(f => formData.append('files', f))
-
-      const res = await fetch('/api/analysis/submit-photo', { method: 'POST', body: formData, signal: controller.signal })
-      clearTimeout(timeout)
-
-      if (res.status === 409) {
-        setWarnings(['이미 처리 중입니다. 잠시 후 다시 시도해주세요.'])
-        setUploading(false)
+      const r = await fetch('/api/analysis/start', { method: 'POST' })
+      const data = await r.json()
+      if (data.status === 'COMPLETED') {
+        navigate('/result', {
+          state: { result: data.result, reportImageUrl: data.reportImageUrl },
+        })
         return
       }
-
-      const data = await res.json()
-
-      if (data.status === 'COMPLETED') {
-        navigate('/result', { state: { result: data.result, reportImageUrl: data.reportImageUrl } })
-      } else if (data.status === 'VALIDATION_FAILED') {
-        setWarnings(data.validationWarnings ?? [])
-        setPhotos([])
-        setUploading(false)
-        if (fileInputRef.current) fileInputRef.current.value = ''
-      } else {
-        setWarnings(['오류가 발생했습니다. 다시 시도해주세요.'])
-        setUploading(false)
-      }
     } catch {
-      clearTimeout(timeout)
-      setWarnings(['서버에 문제가 발생했습니다. 잠시 후 다시 시도해주세요.'])
-      setUploading(false)
+      // 선체크 실패해도 일반 흐름으로 계속 진행
+    }
+
+    try {
+      const resized = await resizeImage(photo.file)
+      navigate('/loading', { state: { file: resized } })
+    } catch {
+      navigate('/error', { state: { warnings: ['이미지 처리 중 문제가 발생했습니다. 다른 사진으로 시도해주세요.'] } })
     }
   }
 
-  const canSubmit = photos.length > 0 && !uploading
+  const canSubmit = !!photo
 
   return (
-    <div className="upload-body">
-      <div className="upload-frame">
-        <main className="upload-page">
+    <div className="up-frame" data-screen-label="Upload">
+      {dialog}
+      <header className="up-topnav">
+        <span />
+        <h1 className="up-title">사진 업로드</h1>
+        <span />
+      </header>
 
-          {uploading ? (
-            <div className="upload-loading">
-              <div className="upload-spinner" />
-              <p className="upload-loading-text">사진을 분석하고 있습니다…</p>
-              <p className="upload-loading-sub">잠시만 기다려주세요</p>
-            </div>
-          ) : (
-            <>
-              <header className="upload-head">
-                <div className="upload-top-row">
-                  <button
-                    className="upload-back"
-                    onClick={() => navigate('/home')}
-                    aria-label="뒤로"
-                  >
-                    ←
-                  </button>
-                  <span>back to menu</span>
-                </div>
-                <h1 className="upload-brand" onClick={() => navigate('/')} style={{ cursor: 'pointer' }}>STYLE<span className="dot">.</span></h1>
-                <p className="upload-crumb">— 퍼스널 컬러 진단 —</p>
-              </header>
-
-              <div className="upload-section-title">사 진 첨 부</div>
-
-              {/* Drop zone */}
-              <div
-                className={`upload-drop${isDrag ? ' is-drag' : ''}`}
-                onClick={() => fileInputRef.current?.click()}
-                onDragEnter={(e) => { e.preventDefault(); setIsDrag(true) }}
-                onDragOver={(e) => { e.preventDefault(); setIsDrag(true) }}
-                onDragLeave={(e) => { e.preventDefault(); setIsDrag(false) }}
-                onDrop={handleDrop}
-              >
-                <div className="upload-drop-icon" aria-hidden="true">
-                  <svg viewBox="0 0 40 40" fill="none">
-                    <rect x="5" y="12" width="30" height="22" rx="3" stroke="currentColor" strokeWidth="1.6" />
-                    <rect x="15" y="8" width="10" height="4" stroke="currentColor" strokeWidth="1.6" />
-                    <circle cx="20" cy="23" r="6" stroke="currentColor" strokeWidth="1.6" />
-                    <circle cx="20" cy="23" r="2" fill="currentColor" />
-                    <circle cx="30" cy="17" r="1" fill="currentColor" />
-                  </svg>
-                </div>
-                <p className="upload-drop-title">
-                  사진을 선택하세요 <em>최대 {MAX}장</em>
-                </p>
-                <p className="upload-drop-hint">탭하거나 끌어다 놓으세요.</p>
-              </div>
-
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                multiple
-                hidden
-                onChange={(e) => { addFiles(e.target.files); e.target.value = '' }}
-              />
-
-              {/* Photo grid */}
-              <div className="upload-grid">
-                {Array.from({ length: MAX }).map((_, i) => (
-                  photos[i] ? (
-                    <div key={i} className="upload-thumb">
-                      <img src={photos[i].url} alt={`첨부 사진 ${i + 1}`} />
-                      <span className="upload-thumb-num">{i + 1}</span>
-                      <button
-                        className="upload-thumb-rm"
-                        onClick={(e) => { e.stopPropagation(); removePhoto(i) }}
-                        aria-label={`사진 ${i + 1} 삭제`}
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ) : (
-                    <div
-                      key={i}
-                      className="upload-thumb empty"
-                      onClick={() => fileInputRef.current?.click()}
-                    >
-                      +
-                    </div>
-                  )
-                ))}
-              </div>
-
-              {/* Warnings */}
-              {warnings.length > 0 && (
-                <div className="upload-warning">
-                  {warnings.map((w, i) => <p key={i}>⚠ {w}</p>)}
-                </div>
-              )}
-
-              {/* Tips */}
-              <aside className="upload-tips" aria-label="촬영 팁">
-                <ul>
-                  <li>자연광에서 정면 얼굴이 잘 보이게.</li>
-                  <li>화장은 옅게, 머리는 이마가 보이도록.</li>
-                  <li>한 장 이상 첨부하면 분석을 시작할 수 있어요.</li>
-                </ul>
-              </aside>
-
-              {/* CTA */}
-              <div className="upload-cta-wrap">
-                <button
-                  className="upload-cta"
-                  type="button"
-                  disabled={!canSubmit}
-                  onClick={handleSubmit}
-                >
-                  분석 시작하기
-                  {canSubmit && <span className="upload-cta-arrow">→</span>}
-                </button>
-                <div className="upload-helper">
-                  {photos.length > 0
-                    ? `${photos.length}/${MAX}장 첨부됨 — 분석 준비 완료`
-                    : '사진을 1장 이상 첨부해 주세요.'}
-                </div>
-              </div>
-            </>
-          )}
-
-        </main>
+      <div className="up-steps">
+        <div className="up-step active"><span className="up-dot">1</span>사진 업로드</div>
+        <span className="up-line" />
+        <div className="up-step"><span className="up-dot">2</span>AI 분석</div>
+        <span className="up-line" />
+        <div className="up-step"><span className="up-dot">3</span>결과 확인</div>
       </div>
+
+      <label
+        className={`up-drop${isDrag ? ' is-drag' : ''}`}
+        onDragEnter={(e) => { e.preventDefault(); setIsDrag(true) }}
+        onDragOver={(e) => { e.preventDefault(); setIsDrag(true) }}
+        onDragLeave={(e) => { e.preventDefault(); setIsDrag(false) }}
+        onDrop={handleDrop}
+      >
+        {photo ? (
+          <div className="up-preview">
+            <img src={photo.url} alt="첨부 사진" />
+            <button
+              className="up-preview-rm"
+              type="button"
+              aria-label="사진 삭제"
+              onClick={(e) => {
+                e.preventDefault()
+                setPhoto(prev => { if (prev) URL.revokeObjectURL(prev.url); return null })
+                if (fileInputRef.current) fileInputRef.current.value = ''
+              }}
+            >×</button>
+          </div>
+        ) : (
+          <>
+            <span className="up-drop-ico" aria-hidden="true">
+              <svg viewBox="0 0 40 40" fill="none">
+                <rect x="5" y="12" width="30" height="22" rx="3" stroke="currentColor" strokeWidth="1.6" />
+                <rect x="15" y="8" width="10" height="4" stroke="currentColor" strokeWidth="1.6" />
+                <circle cx="20" cy="23" r="6" stroke="currentColor" strokeWidth="1.6" />
+                <circle cx="20" cy="23" r="2" fill="currentColor" />
+              </svg>
+            </span>
+            <h2>사진을 업로드하세요</h2>
+            <p className="up-hint">탭하여 갤러리에서 선택</p>
+            <p className="up-or">또는 카메라로 바로 촬영</p>
+          </>
+        )}
+        <input
+          ref={fileInputRef}
+          className="up-file-input"
+          type="file"
+          accept="image/jpeg,image/png,.jpg,.jpeg,.png"
+          onChange={(e) => { addFiles(e.target.files); e.target.value = '' }}
+        />
+      </label>
+      <div className="up-meta-row">JPG · PNG · 최대 10MB</div>
+      {warning && <div className="up-warn-row">⚠ {warning}</div>}
+
+      <aside className="up-priv">
+        <span className="up-lock" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+            <rect x="5" y="10" width="14" height="10" rx="2" stroke="currentColor" strokeWidth="1.6" />
+            <path d="M8 10V7a4 4 0 0 1 8 0v3" stroke="currentColor" strokeWidth="1.6" />
+          </svg>
+        </span>
+        <div>
+          업로드한 사진은 분석 후 즉시 삭제되며, 외부에 공유되지 않습니다.<br />
+          <a href="#">개인정보 처리방침 보기 →</a>
+        </div>
+      </aside>
+
+      <div className="up-cta-block">
+        <button
+          className="up-cta"
+          type="button"
+          disabled={!canSubmit}
+          onClick={handleSubmit}
+        >
+          분석 시작하기 <span className="up-cta-arrow">→</span>
+        </button>
+      </div>
+
+      <div className="up-section-title">
+        <span className="up-em">📋 좋은 사진 조건</span>
+      </div>
+      <div className="up-guide">
+        <div className="up-gcard">
+          <div className="up-htitle"><span className="up-mark">✓</span>이런 사진</div>
+          <div className="up-gphoto">
+            <svg viewBox="0 0 40 40" fill="none">
+              <path d="M8 21l8 8 16-18" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </div>
+          <ul>
+            <li>정면 얼굴이 잘 보이는 사진</li>
+            <li>자연광 또는 밝은 실내</li>
+            <li>필터/보정 없는 사진</li>
+          </ul>
+        </div>
+        <div className="up-gcard bad">
+          <div className="up-htitle"><span className="up-mark">×</span>피해야 할 사진</div>
+          <div className="up-gphoto">
+            <svg viewBox="0 0 40 40" fill="none">
+              <line x1="10" y1="10" x2="30" y2="30" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+              <line x1="30" y1="10" x2="10" y2="30" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+            </svg>
+          </div>
+          <ul>
+            <li>선글라스·마스크 착용</li>
+            <li>너무 어둡거나 역광</li>
+            <li>여러 명이 찍힌 사진</li>
+          </ul>
+        </div>
+      </div>
+
+      <nav className="up-tabbar" aria-label="탭바">
+        <div className="up-tabbar-inner">
+          <button className="up-tab" type="button" onClick={() => navigate('/')}>
+            <span className="up-tico"><svg viewBox="0 0 24 24" fill="none"><path d="M4 11l8-7 8 7v9a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1v-9z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" /></svg></span>홈
+          </button>
+          <button className="up-tab active up-cta-tab" type="button">
+            <span className="up-tico"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="6" width="16" height="14" rx="2" stroke="currentColor" strokeWidth="1.8" /><circle cx="12" cy="13" r="3.5" stroke="currentColor" strokeWidth="1.8" /></svg></span>진단하기
+          </button>
+          <button className="up-tab" type="button" onClick={checkReport}>
+            <span className="up-tico"><svg viewBox="0 0 24 24" fill="none"><rect x="5" y="4" width="14" height="17" rx="2" stroke="currentColor" strokeWidth="1.6" /><line x1="8" y1="9" x2="16" y2="9" stroke="currentColor" strokeWidth="1.6" /><line x1="8" y1="13" x2="14" y2="13" stroke="currentColor" strokeWidth="1.6" /></svg></span>내 리포트
+          </button>
+        </div>
+      </nav>
     </div>
   )
 }
