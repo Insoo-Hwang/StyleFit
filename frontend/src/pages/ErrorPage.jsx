@@ -1,12 +1,19 @@
 import { useLocation, useNavigate } from 'react-router-dom'
 import useReportCheck from '../hooks/useReportCheck.jsx'
+import { trackEvent } from '../analytics'
 import './ErrorPage.css'
 
 export default function ErrorPage() {
   const navigate = useNavigate()
   const { state } = useLocation()
   const warnings = state?.warnings ?? []
-  const { checkReport, dialog } = useReportCheck()
+  const reason = state?.reason ?? 'unknown'
+  const { checkReport, dialog } = useReportCheck('error_tabbar')
+
+  const goRetry = (location) => {
+    trackEvent('retry_clicked', { reason, location })
+    navigate('/upload')
+  }
 
   return (
     <div className="er-frame" data-screen-label="Error">
@@ -36,7 +43,7 @@ export default function ErrorPage() {
         )}
 
         <div className="er-actions">
-          <button className="er-cta" type="button" onClick={() => navigate('/upload')}>
+          <button className="er-cta" type="button" onClick={() => goRetry('error_cta')}>
             다른 사진으로 다시 시도 <span className="er-cta-arrow">→</span>
           </button>
           <button className="er-link" type="button" onClick={() => navigate('/')}>
@@ -55,7 +62,7 @@ export default function ErrorPage() {
           <button className="er-tab" type="button" onClick={() => navigate('/')}>
             <span className="er-tico"><svg viewBox="0 0 24 24" fill="none"><path d="M4 11l8-7 8 7v9a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1v-9z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" /></svg></span>홈
           </button>
-          <button className="er-tab active er-cta-tab" type="button" onClick={() => navigate('/upload')}>
+          <button className="er-tab active er-cta-tab" type="button" onClick={() => goRetry('error_tabbar')}>
             <span className="er-tico"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="6" width="16" height="14" rx="2" stroke="currentColor" strokeWidth="1.8" /><circle cx="12" cy="13" r="3.5" stroke="currentColor" strokeWidth="1.8" /></svg></span>진단하기
           </button>
           <button className="er-tab" type="button" onClick={checkReport}>

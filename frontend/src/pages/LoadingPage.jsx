@@ -1,7 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import useReportCheck from '../hooks/useReportCheck.jsx'
+import { trackEvent } from '../analytics'
 import './LoadingPage.css'
+
+function extractTone(raw) {
+  try {
+    const r = typeof raw === 'string' ? JSON.parse(raw) : raw
+    return {
+      personal_color: r?.personalColor ?? 'unknown',
+      main_type: r?.mainType ?? 'unknown',
+    }
+  } catch {
+    return { personal_color: 'unknown', main_type: 'unknown' }
+  }
+}
 
 const STEPS = [
   '사진 품질 확인 중…',
@@ -23,7 +36,7 @@ export default function LoadingPage() {
   const [activeStep, setActiveStep] = useState(0)
   const [factIdx, setFactIdx] = useState(0)
   const startedRef = useRef(false)
-  const { checkReport, dialog } = useReportCheck()
+  const { checkReport, dialog } = useReportCheck('loading_tabbar')
 
   useEffect(() => {
     if (startedRef.current) return
@@ -43,31 +56,45 @@ export default function LoadingPage() {
     const formData = new FormData()
     formData.append('file', file)
 
+    const startedAt = Date.now()
     const fetchPromise = fetch('/api/analysis/submit-photo', {
       method: 'POST',
       body: formData,
     }).then(async (res) => {
       if (res.status === 409) {
-        return { kind: 'error', warnings: ['이미 처리 중입니다. 잠시 후 다시 시도해주세요.'] }
+        return { kind: 'error', reason: 'in_progress_409', warnings: ['이미 처리 중입니다. 잠시 후 다시 시도해주세요.'] }
       }
       const data = await res.json()
       if (data.status === 'COMPLETED') {
         return { kind: 'completed', result: data.result, reportImageUrl: data.reportImageUrl }
       }
       if (data.status === 'VALIDATION_FAILED') {
-        return { kind: 'error', warnings: data.validationWarnings ?? [] }
+        return { kind: 'error', reason: 'validation_failed', warnings: data.validationWarnings ?? [] }
       }
-      return { kind: 'error', warnings: ['분석 중 오류가 발생했습니다.'] }
-    }).catch(() => ({ kind: 'error', warnings: ['서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.'] }))
+      return { kind: 'error', reason: 'unknown', warnings: ['분석 중 오류가 발생했습니다.'] }
+    }).catch(() => ({ kind: 'error', reason: 'network', warnings: ['서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.'] }))
 
     Promise.all([fetchPromise, minWait]).then(([result]) => {
+      const elapsed_ms = Date.now() - startedAt
       if (result.kind === 'completed') {
+        trackEvent('analysis_completed', { ...extractTone(result.result), elapsed_ms })
         navigate('/result', {
           replace: true,
           state: { result: result.result, reportImageUrl: result.reportImageUrl },
         })
       } else {
-        navigate('/error', { replace: true, state: { warnings: result.warnings } })
+        // 검증 실패 누적 카운트 → 서버 응답의 failedAttempts를 attempt_no로 GA에 함께 전송
+        fetch('/api/user-behavior/analysis-failed', { method: 'POST' })
+          .then(r => r.ok ? r.json() : null)
+          .catch(() => null)
+          .then((body) => {
+            trackEvent('analysis_failed', {
+              reason: result.reason,
+              elapsed_ms,
+              attempt_no: body?.failedAttempts ?? null,
+            })
+          })
+        navigate('/error', { replace: true, state: { warnings: result.warnings, reason: result.reason } })
       }
     })
 

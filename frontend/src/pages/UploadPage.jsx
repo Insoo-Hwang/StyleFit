@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import useReportCheck from '../hooks/useReportCheck.jsx'
+import { trackEvent } from '../analytics'
 import './UploadPage.css'
 
 const MAX_DIM = 1280
@@ -42,11 +43,24 @@ export default function UploadPage() {
   const [isDrag, setIsDrag] = useState(false)
   const [warning, setWarning] = useState('')
   const fileInputRef = useRef(null)
-  const { checkReport, dialog } = useReportCheck()
+  const { checkReport, dialog } = useReportCheck('upload_tabbar')
+
+  // 사진 처음 첨부된 시각 (망설임 시간 측정용)
+  const attachedAtRef = useRef(null)
+  // 세션 내 사진 교체 횟수
+  const replacedCountRef = useRef(0)
 
   const setFile = (file) => {
     setPhoto(prev => {
-      if (prev) URL.revokeObjectURL(prev.url)
+      if (prev) {
+        URL.revokeObjectURL(prev.url)
+        // 이미 사진이 있던 상태에서 새 사진으로 바꾸면 교체로 카운트
+        replacedCountRef.current += 1
+        trackEvent('photo_replaced', { count: replacedCountRef.current })
+      } else {
+        // 처음 첨부 — 망설임 시간 측정 시작
+        attachedAtRef.current = Date.now()
+      }
       return { file, url: URL.createObjectURL(file) }
     })
     setWarning('')
@@ -58,15 +72,18 @@ export default function UploadPage() {
 
     const typeOk = ACCEPTED_TYPES.includes(incoming.type) || ACCEPTED_EXT.test(incoming.name)
     if (!typeOk) {
+      trackEvent('photo_rejected_client', { reason: 'mime_or_ext', file_type: incoming.type || 'unknown' })
       setWarning('JPG 또는 PNG 형식의 사진만 업로드할 수 있어요.')
       return
     }
     if (incoming.size > MAX_BYTES) {
       const mb = (incoming.size / 1024 / 1024).toFixed(1)
+      trackEvent('photo_rejected_client', { reason: 'size', size_mb: Number(mb) })
       setWarning(`사진 용량은 최대 10MB까지 가능해요. (현재 ${mb}MB)`)
       return
     }
 
+    trackEvent('photo_selected', { size_kb: Math.round(incoming.size / 1024) })
     setFile(incoming)
   }
 
@@ -84,6 +101,7 @@ export default function UploadPage() {
       const r = await fetch('/api/analysis/start', { method: 'POST' })
       const data = await r.json()
       if (data.status === 'COMPLETED') {
+        trackEvent('analysis_reused', { source: 'upload_submit' })
         navigate('/result', {
           state: { result: data.result, reportImageUrl: data.reportImageUrl },
         })
@@ -93,10 +111,28 @@ export default function UploadPage() {
       // 선체크 실패해도 일반 흐름으로 계속 진행
     }
 
+    // 망설임 시간 + 교체 카운트 기록 (서버 + GA) — 제출 직전에만 보낸다
+    const dwellMs = attachedAtRef.current ? Date.now() - attachedAtRef.current : null
+    if (dwellMs != null) {
+      trackEvent('photo_dwell_time', { elapsed_ms: dwellMs, replaced: replacedCountRef.current })
+      fetch('/api/user-behavior/photo-dwell', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ms: dwellMs }),
+      }).catch(() => {})
+    }
+    fetch('/api/user-behavior/photo-replaced', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ count: replacedCountRef.current }),
+    }).catch(() => {})
+
     try {
       const resized = await resizeImage(photo.file)
+      trackEvent('analysis_submitted', { resized_kb: Math.round(resized.size / 1024) })
       navigate('/loading', { state: { file: resized } })
     } catch {
+      trackEvent('photo_resize_failed')
       navigate('/error', { state: { warnings: ['이미지 처리 중 문제가 발생했습니다. 다른 사진으로 시도해주세요.'] } })
     }
   }

@@ -152,7 +152,7 @@
 }
 /* PREVIEW HERO — ResultPage hero를 그대로 가져온 형태 (미리보기) */
 .hm-preview-hero {
-  position: relative; padding: 28px 24px;
+  position: relative; padding: 28px 24px 70px;
   background: var(--green-darker); color: var(--paper);
   border-radius: 8px; overflow: hidden;
 }
@@ -161,6 +161,22 @@
   background-image: repeating-linear-gradient(135deg, rgba(255,255,255,0.04) 0 1px, transparent 1px 12px);
   pointer-events: none;
 }
+/* 하단 페이드 — "안개에 가려진 비밀스러운 결과" 느낌 */
+.hm-preview-hero::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: 0;
+  height: 55%;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(34, 51, 41, 0.35) 30%,
+    var(--green-darker) 75%,
+    var(--green-darker) 100%
+  );
+  pointer-events: none;
+  z-index: 2;
+}
+/* 메타 행은 페이드 영역에 걸쳐 흐릿하게 — 살짝 보이지만 가려진 느낌 */
+.hm-ph-meta { opacity: 0.55; filter: blur(0.4px); }
 .hm-ph-pill {
   position: relative; z-index: 1;
   display: inline-flex; align-items: center; gap: 6px;
@@ -193,7 +209,9 @@
 }
 
 .hm-preview-cut {
-  display: flex; justify-content: center; margin-top: 14px;
+  position: absolute; left: 0; right: 0; bottom: 18px;
+  z-index: 3;
+  display: flex; justify-content: center;
 }
 .hm-more-label {
   font-weight: 700; font-size: 14px; color: var(--green-deep);
@@ -238,4 +256,35 @@
 .hm-tab.active::before {
   content: ""; position: absolute; top: -6px; left: 50%; transform: translateX(-50%);
   width: 36px; height: 2px; background: var(--green-deep); border-radius: 2px;
+}
+
+/* [디버그] 결제 의향 상태 표시 — MVP 검증용, 운영 전 제거 */
+.hm-debug {
+  margin: 24px 22px 12px;
+  padding: 14px 14px 12px;
+  border: 1.4px dashed var(--green-mid);
+  border-radius: 6px;
+  background: var(--paper-card);
+  font-size: 12.5px;
+  color: var(--green-darker);
+}
+.hm-debug-h {
+  font-weight: 800;
+  font-size: 11.5px;
+  letter-spacing: 0.06em;
+  color: var(--green-deep);
+  margin: 0 0 6px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--green-mid);
+}
+.hm-debug-h:first-child { padding-top: 0; border-top: 0; }
+.hm-debug-row {
+  display: flex; justify-content: space-between; align-items: baseline;
+  gap: 12px;
+  padding: 4px 0;
+}
+.hm-debug-row strong { font-weight: 800; color: var(--green-darker); text-align: right; }
+.hm-debug-row .hm-debug-comment {
+  max-width: 60%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }

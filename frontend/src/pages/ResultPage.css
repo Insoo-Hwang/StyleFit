@@ -199,6 +199,7 @@
 
 /* ACTIONS */
 .rp-actions { margin: 0 22px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.rp-actions.single { grid-template-columns: 1fr; }
 .rp-btn-act {
   height: 52px; border-radius: 6px;
   background: var(--green-deep); color: var(--paper);

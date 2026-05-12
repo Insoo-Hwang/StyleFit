@@ -39,6 +39,27 @@ com.stylefit
 │   ├── PhotoValidationResponse
 │   └── PhotoValidationController # 별도 검증 엔드포인트
 ├── product                       # 메뉴/상품 메타
+├── survey                        # 리포트 만족도 평가
+│   ├── SatisfactionSurveyController  # /api/survey/satisfaction (GET, POST)
+│   ├── SatisfactionSurveyService     # upsert + 검증(별점 1~5, 성별 필수, 코멘트 300자)
+│   ├── SatisfactionSurvey            # JPA 엔티티 (cookie_id PK, 한 쿠키당 1건)
+│   ├── SatisfactionSurveyRepository
+│   ├── SatisfactionSurveyRequest     # rating, gender, comment
+│   ├── SatisfactionSurveyResponse    # exists, rating, gender, comment
+│   └── Gender                        # MALE / FEMALE enum
+├── purchase                      # 유료 리포트 결제 의향 (MVP 검증)
+│   ├── PurchaseIntentController      # /api/purchase-intent (GET, /open, /yes)
+│   ├── PurchaseIntentService         # markOpened / markYes
+│   ├── PurchaseIntent                # JPA 엔티티 (cookie_id PK, 한 쿠키당 1건)
+│   ├── PurchaseIntentRepository
+│   ├── PurchaseIntentResponse        # exists, lastChoice, dialogCount
+│   └── PurchaseChoice                # YES / NO enum
+├── behavior                      # 사용자 행동 신호 (MVP 결제 의향 결정 요인 분석)
+│   ├── UserBehaviorController        # /api/user-behavior (GET + 5 POSTs)
+│   ├── UserBehaviorService           # markScroll / markPhotoDwell / markAnalysisFailed / markResultRevisit / markPhotoReplaced
+│   ├── UserBehavior                  # JPA 엔티티 (cookie_id PK, 행동 요약 1행)
+│   ├── UserBehaviorRepository
+│   └── UserBehaviorResponse          # exists + 5개 신호 필드
 ├── auth
 │   └── AnonymousCookieFilter     # stylefit_uid 쿠키 (30일, HttpOnly, SameSite=Lax)
 └── config
@@ -53,6 +74,17 @@ com.stylefit
 |---|---|---|
 | `POST` | `/api/analysis/start` | 익명 쿠키 기준 기존 분석 상태 조회 (`PHOTO_REQUIRED` / `PROCESSING` / `COMPLETED`) |
 | `POST` | `/api/analysis/submit-photo` | 사진 1장 업로드 → 검증 → AI 분석 → 결과 저장 |
+| `GET`  | `/api/survey/satisfaction`   | 본인 만족도 평가 조회 (`exists`, `rating`, `comment`) |
+| `POST` | `/api/survey/satisfaction`   | 만족도 평가 저장 (upsert — 기존 평가 있으면 덮어씀) |
+| `GET`  | `/api/purchase-intent`       | 본인 결제 의향 조회 (`exists`, `lastChoice`, `dialogCount`) |
+| `POST` | `/api/purchase-intent/open`  | 결제 다이얼로그 노출 시 호출 — `dialog_count++` + `last_choice='NO'` 리셋 |
+| `POST` | `/api/purchase-intent/yes`   | "예" 클릭 시 호출 — `last_choice='YES'` |
+| `GET`  | `/api/user-behavior`              | 본인 행동 신호 조회 (최대 스크롤 / 망설임 / 검증 실패 / 재방문 / 사진 교체) |
+| `POST` | `/api/user-behavior/scroll`       | 결과 페이지 섹션 도달 — 인덱스가 더 클 때만 max 갱신 |
+| `POST` | `/api/user-behavior/photo-dwell`  | 사진 첨부→제출 사이 소요 ms 기록 |
+| `POST` | `/api/user-behavior/analysis-failed` | 검증 실패 누적 카운트 +1 (응답의 `failedAttempts`를 `attempt_no`로 GA에 함께 전송) |
+| `POST` | `/api/user-behavior/result-revisit`  | 결과 페이지 마운트 시 +1 |
+| `POST` | `/api/user-behavior/photo-replaced`  | 세션 내 사진 교체 횟수 기록 |
 
 ### 분석 플로우
 
@@ -141,6 +173,64 @@ spring.servlet.multipart.max-request-size=60MB
 
 ## 6. 최근 적용한 수정 (이슈 트래킹)
 
+### 2026-05-12 — 사용자 행동 신호 측정 (5종)
+
+| 항목 | 변경 |
+|---|---|
+| **목적** | MVP 단계에서 "결제 의향을 무엇이 결정하는가"를 추정하기 위한 5가지 행동 신호를 GA + DB에 동시 적재. 홈 디버그 박스에서 한 사용자의 모든 신호를 한눈에 확인 가능 |
+| **DDL** | `user_behavior` 테이블 신규 — `cookie_id` PK, `max_scroll_section/index`, `last_photo_dwell_ms`, `failed_attempts`, `result_revisit_count`, `last_photo_replaced` |
+| **백엔드 도메인** | `com.stylefit.behavior` 패키지 — 엔티티/리포지토리/서비스(5개 메서드)/컨트롤러(GET + 5 POST)/응답 DTO |
+| **신호 ①  스크롤 깊이** | ResultPage 각 N°XX 헤딩에 `data-rp-section/index` 박고 IntersectionObserver(threshold 0.5)로 도달 시 인덱스가 더 큰 경우만 서버/GA 전송. `result_scroll_depth` 이벤트 |
+| **신호 ②  사진 망설임 시간** | UploadPage에서 처음 사진 첨부 시각을 ref로 기록, "분석 시작하기" 클릭 시 `Date.now()-attachedAt`을 ms로 전송. `photo_dwell_time` 이벤트 (`elapsed_ms`, `replaced`) |
+| **신호 ③  검증 실패 누적** | LoadingPage `analysis_failed` 분기에서 `POST /api/user-behavior/analysis-failed` → 응답의 `failedAttempts`를 `analysis_failed` GA 이벤트의 `attempt_no` 파라미터로 함께 전송 |
+| **신호 ④  결과 페이지 재방문** | ResultPage 마운트(데이터 로드 1회) 시 `POST /api/user-behavior/result-revisit`. 진단 후 며칠 후 돌아오는 사용자 비율 측정 |
+| **신호 ⑤  사진 교체 횟수** | UploadPage `setFile`에서 기존 photo가 있던 상태에서 새 파일 들어오면 카운트++ + `photo_replaced` GA. 제출 시 마지막 카운트를 DB에 저장 |
+| **홈 디버그 박스 확장** | `[DEBUG] 결제 의향` / `[DEBUG] 만족도 조사` / `[DEBUG] 행동 신호` 3개 섹션을 점선 구분선으로 분리. 만족도 코멘트는 ellipsis로 잘림. **운영 전 제거 대상** |
+
+### 2026-05-12 — 만족도 평가에 성별 필드 추가
+
+| 항목 | 변경 |
+|---|---|
+| **DDL** | `satisfaction_survey`에 `gender VARCHAR(10) NOT NULL` 컬럼 + `CHECK (gender IN ('MALE','FEMALE'))` 제약 추가. 이미 만들어진 컬럼이라 운영 마이그레이션 필요 시 별도 `ALTER TABLE` 스크립트 필요 |
+| **백엔드** | `Gender` enum(`MALE`/`FEMALE`) 추가, `SatisfactionSurvey` 엔티티에 `@Enumerated(STRING)` 필드, `SatisfactionSurveyRequest`/`Response`에 `gender` 추가, `SatisfactionSurveyService.upsert`에 성별 null 검증 추가 |
+| **다이얼로그 UI** | 별점/별점 라벨 아래에 남자/여자 토글 버튼 추가. `gender`가 `'MALE'`/`'FEMALE'` 둘 중 하나로 선택되어야 제출 활성화 |
+| **GA 이벤트** | `survey_submit`/`survey_submit_failed` 파라미터에 `gender` 추가 — 성별별 만족도 분포·코멘트 작성률 분석 가능 |
+
+### 2026-05-12 — 유료 리포트 결제 의향 측정 (MVP)
+
+| 항목 | 변경 |
+|---|---|
+| **DB 스키마** | `purchase_intent` 테이블 추가 (`cookie_id` PK, `last_choice` ENUM 'YES'/'NO' default 'NO', `dialog_count` INTEGER default 0, `created_at`/`updated_at` + 트리거). 한 쿠키당 1건만 존재 |
+| **백엔드 도메인** | `com.stylefit.purchase` 패키지 신규 — `PurchaseIntent`(엔티티), `PurchaseChoice`(YES/NO enum), `PurchaseIntentService`(markOpened/markYes), `PurchaseIntentRepository`, `PurchaseIntentController`, `PurchaseIntentResponse` |
+| **API** | `GET /api/purchase-intent` (조회), `POST /api/purchase-intent/open` (다이얼로그 노출 — count++ & last_choice='NO'로 리셋), `POST /api/purchase-intent/yes` ("예" 클릭) |
+| **ResultPage CTA 변경** | 기존 "이미지 다운로드 / 공유하기" 두 버튼 폐기 → 단일 CTA **"1,990원으로 이미지 리포트 받아보기"**. `result_action` GA 이벤트 중 `download`/`share` 분기도 함께 제거 |
+| **결제 의향 다이얼로그** | `components/PurchaseIntentDialog.jsx` + `.css` — 2-stage 구조. Stage 1: "1,990원을 결제하시겠습니까?" + 예/아니오. Stage 2: "베타 테스트 기간이라 무료로 제공됩니다" + 리포트 이미지(`reportImageUrl`). 백드롭/아니오/X 클릭은 모두 stage 인자와 함께 `onClose(stage)` 호출 |
+| **저장 정책** | 다이얼로그 노출 = `markOpened` (서버에 `NO` 기본값으로 미리 박음 → 사용자가 그냥 끄면 자연스럽게 'NO'로 남음). "예" 클릭 = `markYes` (덮어쓰기). 별도 "아니오" API 불필요. **이미 'YES'를 누른 사용자는 이후 `markOpened` 호출이 와도 count/state 모두 동결** — "예 누르기 전까지 몇 번 망설였는가"만 의미 있다는 MVP 측정 목적에 맞춤 |
+| **HomePage 미리보기 카드 가리기** | `.hm-preview-hero` 하단에 그라디언트 페이드(`::after`) + 자물쇠 SVG + "결과는 진단 후 확인할 수 있어요" 라벨 추가, `.hm-ph-meta`는 opacity/blur로 흐릿하게 — 비밀스러운(잠긴 결과) 무드로 진단 CTA 클릭률을 높임 |
+| **HomePage 디버그 표시** | MVP 검증용 — 현재 쿠키 사용자의 `lastChoice`/`dialogCount`를 카드로 노출. 데이터 없으면 "아직 누르지 않음". `hm-debug` 스타일은 점선 보더의 페이퍼 카드. **운영 전 제거 대상** |
+| **GA 이벤트** | `purchase_dialog_open`, `purchase_choice` (`choice`: 'yes'/'no'). Stage 2에서 닫는 경우는 이미 'yes'를 박았으므로 'no'를 중복 전송하지 않도록 stage 분기 |
+
+### 2026-05-12 — 리포트 만족도 평가
+
+| 항목 | 변경 |
+|---|---|
+| **DB 스키마** | `satisfaction_survey` 테이블 추가 (`cookie_id` PK, `rating` SMALLINT 1~5, `comment` VARCHAR(300), `created_at`/`updated_at` + 트리거). `schema-postgres.sql`에 정의 — 한 쿠키당 1건만 존재(재제출 시 UPDATE) |
+| **백엔드 도메인** | `com.stylefit.survey` 패키지 신규 — `SatisfactionSurvey`(엔티티), `SatisfactionSurveyRepository`, `SatisfactionSurveyService`(별점/코멘트 검증 포함 upsert), `SatisfactionSurveyController`, Request/Response DTO |
+| **API** | `GET /api/survey/satisfaction` → 본인 평가 조회 (`exists`=false면 미작성), `POST /api/survey/satisfaction` → upsert. 둘 다 `AnonymousCookieFilter`가 주입한 `stylefit_uid` 기준 |
+| **만족도 다이얼로그** | `components/SatisfactionDialog.jsx` + `.css` 신규 — 별 5개(반개 없음, 클릭으로 1~5 토글), textarea(300자 제한 + 글자수 카운터), `NoReportDialog` 톤(딥그린 보더 + 도장 그림자) |
+| **ResultPage 연동** | "만족도 평가 →" 버튼 클릭 시 GET으로 기존 평가 조회 → 있으면 수정 모드(타이틀 "평가 수정하기" + 기존 값 채움), 없으면 신규 모드 → 제출 시 POST로 upsert |
+| **GA 이벤트 추가** | `survey_open` (`is_edit`), `survey_submit` (`rating`, `comment_length`, `is_edit`), `survey_submit_failed` (`rating`) |
+| **알려진 제약 (정책 미결)** | `SatisfactionSurveyService.upsert`는 `analysis_result`에 COMPLETED 레코드가 있는지 확인하지 않는다. 프론트 흐름상 ResultPage(결과 보유자만 접근)에서만 호출되므로 현재는 안전. "결과 없는 사용자가 평가 못 하게" 막을지는 추후 정책 결정 필요 — 막을 경우 `AnalysisResultRepository`를 주입해 COMPLETED 체크 후 `400`/`403` 반환 |
+
+### 2026-05-12 — Google Analytics 4 적용
+
+| 항목 | 변경 |
+|---|---|
+| **GA4 측정 코드 도입** | `frontend/src/analytics.js` 신규 — 외부 의존성 없이 gtag 스크립트 동적 로딩. `initGA / trackPageView / trackEvent / setUserId` 4개 API. `VITE_GA_ID`가 비어 있으면 NO-OP (dev 환경 자동 비활성) |
+| **SPA 라우트 추적** | `components/AnalyticsTracker.jsx` 추가 — `useLocation` 기반 page_view 수동 전송. `App.jsx`에 `<AnalyticsTracker />` 마운트 |
+| **퍼널 이벤트 박음** | HomePage: `cta_click` / UploadPage: `photo_selected`, `photo_rejected_client`, `analysis_submitted`, `analysis_reused`, `photo_resize_failed` / LoadingPage: `analysis_completed`(tone+elapsed), `analysis_failed`(reason) / ErrorPage: `retry_clicked` / ResultPage: `result_view`, `result_action`(download/share/survey) / useReportCheck: `my_report_click`, `no_report_dialog_action` |
+| **환경 변수 분리** | `frontend/.env`에 `VITE_GA_ID=G-C7C57TNDKQ`. `.gitignore`에 이미 `frontend/.env` 등록되어 있어 안전. `.env.example` 템플릿 추가 |
+
 ### 2026-05-11 — 디자인 전면 교체 & UX 정비
 
 | 항목 | 변경 |
@@ -176,7 +266,100 @@ spring.servlet.multipart.max-request-size=60MB
 
 ---
 
-## 7. 남은 작업
+## 7. Google Analytics (GA4) 측정 항목
+
+GA4를 통해 익명 사용자의 행동을 수집해 퍼널 이탈률·검증 실패 사유·디바이스 분포 등을 파악한다.
+**개인정보(사진 데이터, 얼굴 정보, 쿠키 raw값, 이메일 등)는 절대 이벤트 파라미터로 보내지 않는다.**
+
+> ### ⚠ 신규 기능 추가 시 필수 규칙 — Claude 세션 공통
+>
+> **이 프로젝트의 모든 새 기능에는 반드시 GA 이벤트도 함께 추가한다.** 다음 세션·다음 작업에서도 이 규칙은 유지된다.
+>
+> - 새 버튼/CTA → `trackEvent('xxx_click', { location, ... })` 박기
+> - 새 API 호출 → 성공/실패 분기마다 이벤트 (예: `xxx_submitted`, `xxx_failed` with `reason`)
+> - 새 다이얼로그/모달 → `xxx_open`, `xxx_action` (close/confirm 등)
+> - 새 페이지 → 별도 코드 불필요 (`AnalyticsTracker`가 자동으로 `page_view` 전송) — 단, 페이지 내 핵심 행동에는 커스텀 이벤트 박기
+> - 7.3 표(커스텀 이벤트)에 **새 이벤트를 반드시 한 줄 추가**해 문서와 코드를 일치시킨다
+> - PII(사진, 얼굴, 코멘트 원문, 쿠키 raw값 등)는 절대 파라미터로 보내지 않는다. 카테고리값(`personal_color: '쿨톤'`)·길이값(`comment_length`)·사유 코드(`reason: 'validation_failed'`)만 보낸다
+> - 이 규칙을 어기면 퍼널 분석에 빈 구간이 생겨 의사결정이 불가능해진다 — 코드가 동작해도 "측정 누락"은 미완성으로 간주
+
+### 7.1 설정
+
+- **측정 ID**: `G-C7C57TNDKQ`
+- **환경 변수**: `frontend/.env`의 `VITE_GA_ID` (값이 비어 있으면 `analytics.js`가 자동으로 NO-OP — dev 환경에서 통계 오염 방지)
+- **헬퍼**: `frontend/src/analytics.js`
+- **SPA 추적**: `components/AnalyticsTracker.jsx`가 `useLocation`으로 라우트 변경마다 `page_view` 수동 전송 (`send_page_view: false`로 자동 전송은 꺼둠)
+
+### 7.2 자동 수집 정보 (page_view 기반)
+
+| 영역 | 보이는 것 |
+|---|---|
+| 페이지 트래픽 | `/`, `/upload`, `/loading`, `/error`, `/result` 각 페이지의 조회수·체류시간·이탈률 |
+| 사용자 | DAU/WAU, 신규 vs 재방문 |
+| 디바이스 | OS·브라우저·해상도 (모바일 우선 앱이라 iOS Safari vs Android Chrome 비율 핵심) |
+| 유입 | 소스(검색/직접/SNS), UTM 캠페인 |
+| 지역/시간대 | 어느 지역·어느 시간대에 진단 시도가 몰리는지 |
+
+### 7.3 커스텀 이벤트
+
+| 이벤트 | 파라미터 | 트리거 위치 | 알 수 있는 인사이트 |
+|---|---|---|---|
+| `cta_click` | `cta`, `location` | HomePage 히어로 CTA, 탭바 진단하기 | 어느 위치 CTA가 진단 전환에 더 기여하는가 |
+| `photo_selected` | `size_kb` | UploadPage 사진 첨부 성공 | 업로드 페이지 도달 → 실제 첨부 비율 |
+| `photo_rejected_client` | `reason` (`mime_or_ext`/`size`), `file_type`, `size_mb` | UploadPage 클라이언트 검증 거부 | 거부 사유 분포 — HEIC 등 미지원 포맷 비율, 10MB 초과 비율 |
+| `analysis_submitted` | `resized_kb` | UploadPage `handleSubmit` 후 `/loading` 진입 | 진단 시도 수 (퍼널 핵심 지표) |
+| `analysis_reused` | `source` | UploadPage에서 기존 COMPLETED 발견 시 | "한 번 진단" 제약으로 캐시 결과 보는 횟수 (재방문 의도 지표) |
+| `photo_resize_failed` | — | UploadPage 캔버스 리사이즈 실패 | 브라우저/이미지 호환성 이슈 |
+| `analysis_completed` | `personal_color`, `main_type`, `elapsed_ms` | LoadingPage 백엔드 응답 성공 | 톤 카테고리 분포, 평균 분석 소요시간 |
+| `analysis_failed` | `reason` (`validation_failed`/`in_progress_409`/`network`/`unknown`), `elapsed_ms`, `attempt_no` | LoadingPage 백엔드 응답 실패 | 백엔드 검증 실패 사유 분포, 누적 실패 횟수별 이탈 비교(2·3회차 좌절 시그널) |
+| `retry_clicked` | `reason`, `location` (`error_cta`/`error_tabbar`) | ErrorPage 재시도 CTA | 검증 실패 후 재시도율 — 이탈 vs 재도전 |
+| `result_view` | `personal_color`, `main_type` | ResultPage 최초 진입 (1회만) | 결과 페이지 진입 수 (실 완료자 수) |
+| `result_action` | `action` (`survey_click`) | ResultPage 만족도 평가 버튼 | 만족도 평가 시도 클릭 수 |
+| `my_report_click` | `location`, `has_report` | 탭바 "내 리포트" | 결과 보유자 vs 미보유자 클릭 비율 |
+| `no_report_dialog_action` | `action` (`close`/`go_diagnose`), `location` | NoReportDialog 버튼 | 다이얼로그가 미진단자를 진단으로 유도하는가 |
+| `survey_open` | `is_edit` | ResultPage 만족도 평가 버튼 → GET 조회 후 | 평가 다이얼로그 노출 횟수, 수정/신규 비율 |
+| `survey_submit` | `rating` (1~5), `gender` (`MALE`/`FEMALE`), `comment_length`, `is_edit` | SatisfactionDialog 제출 성공 | 별점 분포, 성별별 만족도, 코멘트 작성률, 평균 만족도 |
+| `survey_submit_failed` | `rating`, `gender` | 저장 실패 (네트워크/서버 오류) | 만족도 저장 실패율 |
+| `purchase_dialog_open` | — | ResultPage "1,990원 받아보기" CTA 클릭 | 결제 다이얼로그 노출 수 (CTA 매력도) |
+| `purchase_choice` | `choice` (`yes`/`no`) | Stage 1에서 "예" 또는 닫기 | 결제 의향 비율 — MVP 결제 가치 검증 핵심 지표 |
+| `result_scroll_depth` | `section` (`hero`/`type`/`best_colors`/`worst_colors`/`clothing`/`rules`/`hair_accessories`/`situation`/`shop`/`survey`/`purchase`), `index` (0~10) | ResultPage 섹션이 viewport 50% 이상 노출 | 결제 다이얼로그 열기 전까지 도달한 섹션 — 어떤 콘텐츠가 결제 동기를 만드는지 추론 |
+| `photo_dwell_time` | `elapsed_ms`, `replaced` | 사진 첨부 → "분석 시작하기" 클릭 사이 | 사진 선택 망설임 시간 + 가이드 카드 효과 측정 |
+| `photo_replaced` | `count` (세션 누적) | UploadPage에서 사진 첨부된 상태에서 다시 다른 파일 첨부 | "사진 한 장이면 충분" 카피의 부담 완화 효과 |
+
+### 7.4 핵심 퍼널 (GA4 "탐색" 메뉴에서 구성)
+
+```
+1. page_view  (page_path = "/")
+2. page_view  (page_path = "/upload")
+3. photo_selected
+4. analysis_submitted
+5. result_view
+```
+
+각 단계 이탈률로 어느 구간에서 사용자가 가장 많이 떠나는지 확인.
+보조 분기:
+- `analysis_submitted` → `analysis_failed` vs `analysis_completed` 비율 = **검증 통과율**
+- `analysis_failed` → `retry_clicked` 비율 = **실패 후 재시도율**
+- `my_report_click` `has_report=false` → `no_report_dialog_action` `action=go_diagnose` 비율 = **다이얼로그 전환율**
+
+### 7.5 GA4 콘솔에서 추가 설정할 항목 (선택)
+
+- **주요 이벤트(전환) 지정**: `result_view`, `analysis_submitted`를 전환 이벤트로 표시 → 광고/캠페인 효과 측정
+- **DebugView 활성화**: 적용 직후 [Google Analytics Debugger 확장](https://chrome.google.com/webstore/detail/google-analytics-debugger/jnkmfdileelhofjcijamephohjechhna) 켜고 이벤트 1건씩 검증
+- **데이터 보존 기간**: 기본 2개월 → 14개월로 늘리는 것 권장 (관리 → 데이터 설정 → 데이터 보존)
+- **IP 익명화**: 코드에서 `anonymize_ip: true` 이미 설정됨
+
+### 7.6 운영 단계 체크리스트
+
+- [ ] 개인정보처리방침에 "Google Analytics 사용" 명시
+- [ ] 운영 도메인을 GA4 속성의 웹 스트림에 추가 등록
+- [ ] CI/CD에서 `VITE_GA_ID` 환경변수로 주입 (또는 `.env.production` 별도 운영)
+- [ ] CSP 도입 시 `https://www.googletagmanager.com`, `https://www.google-analytics.com` 허용
+- [ ] `stylefit_uid` 쿠키를 `setUserId()`로 매핑 (장기 사용자 추적, 선택)
+
+---
+
+## 8. 남은 작업
 
 ### 백엔드
 - [ ] Python AI 분석 서버 연동 (`callAiAnalysis`, `callAiReportGenerator` 교체 + 임시 `Thread.sleep(15s)` 제거)
@@ -197,9 +380,26 @@ spring.servlet.multipart.max-request-size=60MB
 - [ ] 운영용 application-prod.properties 마무리
 - [ ] HTTPS 적용 (쿠키 Secure 활성화)
 
+### 측정/분석 (GA4)
+- [ ] GA4 콘솔에서 `result_view`, `analysis_submitted`, `survey_submit`을 전환 이벤트로 지정
+- [ ] 운영 도메인 등록 + 개인정보처리방침 GA 사용 고지
+- [ ] `stylefit_uid` 쿠키 → `setUserId()` 매핑으로 장기 사용자 추적 (선택)
+
+### 만족도 평가
+- [ ] 운영자용 만족도 평가 조회 화면 / 어드민 export (CSV 등)
+- [ ] 별점 임계치(예: 1~2점) 알림 — 운영팀 슬랙 등으로 푸시
+- [ ] 코멘트 텍스트 마이닝 / 키워드 추출 (집계용)
+
+### 유료 리포트 (결제 의향 측정 이후)
+- [ ] **운영 전 HomePage `.hm-debug` 박스 제거** — 다른 사용자에게 결제 의향/만족도/행동 신호가 모두 노출됨. 절대 운영 노출 금지
+- [ ] 베타 종료 후 다이얼로그 Stage 2 문구/이미지 교체 (실제 결제 → 결제 게이트웨이 연동)
+- [ ] 결제 의향 데이터(`purchase_intent`) 어드민 대시보드 / 집계 쿼리 (전환율 = YES / dialog_count)
+- [ ] 단가 A/B 테스트(1,990 vs 2,990 등) — 결정 후 GA 파라미터에 가격 추가
+- [ ] 행동 신호(`user_behavior`) ⇄ 결제 의향 상관관계 분석 — 어느 스크롤 도달 사용자가 'YES' 많이 누르는가, 검증 실패 N회차 사용자의 결제 의향, 사진 망설임 길이별 의향 등
+
 ---
 
-## 8. 디렉토리 트리 (요약)
+## 9. 디렉토리 트리 (요약)
 
 ```
 StyleFit/
@@ -217,15 +417,21 @@ StyleFit/
 │   ├── package.json
 │   ├── vite.config.js            # /api 프록시, host: true
 │   ├── index.html                # Pretendard Variable CDN + Google Fonts
+│   ├── .env                      # VITE_GA_ID (gitignore, 커밋 안 됨)
+│   ├── .env.example              # env 템플릿
 │   └── src/
-│       ├── App.jsx               # 라우터 + ScrollToTop
+│       ├── App.jsx               # 라우터 + ScrollToTop + AnalyticsTracker
 │       ├── App.css               # 디자인 토큰(:root vars), 모바일 프레임 가운데 정렬
-│       ├── main.jsx
+│       ├── main.jsx              # initGA() 호출
+│       ├── analytics.js          # GA4 gtag 동적 로딩 헬퍼 (트리거: initGA/trackPageView/trackEvent/setUserId)
 │       ├── components/
-│       │   ├── ScrollToTop.jsx       # 라우트 변경 시 최상단 스크롤
-│       │   ├── NoReportDialog.jsx + .css   # "결과 없음" 모달
+│       │   ├── ScrollToTop.jsx         # 라우트 변경 시 최상단 스크롤
+│       │   ├── AnalyticsTracker.jsx    # 라우트 변경 시 GA page_view 전송
+│       │   ├── NoReportDialog.jsx + .css      # "결과 없음" 모달
+│       │   ├── SatisfactionDialog.jsx + .css  # 만족도 평가(별 5개 + 300자 textarea)
+│       │   ├── PurchaseIntentDialog.jsx + .css # 결제 의향(2-stage: 확인 → 베타 무료 안내+이미지)
 │       ├── hooks/
-│       │   └── useReportCheck.jsx    # 탭바 "내 리포트" 클릭 공용 훅
+│       │   └── useReportCheck.jsx    # 탭바 "내 리포트" 클릭 공용 훅 (GA 이벤트 포함)
 │       └── pages/
 │           ├── HomePage.jsx + .css       # 랜딩 (Entry+Menu 통합)
 │           ├── UploadPage.jsx + .css     # 사진 1장 업로드 + 클라이언트 검증
