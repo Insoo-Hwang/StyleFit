@@ -64,9 +64,16 @@ export default function LoadingPage() {
       if (res.status === 409) {
         return { kind: 'error', reason: 'in_progress_409', warnings: ['이미 처리 중입니다. 잠시 후 다시 시도해주세요.'] }
       }
+      if (res.status === 429) {
+        // 일일 한도 초과 — ErrorPage에서 전용 카피로 안내
+        return { kind: 'error', reason: 'rate_limited', warnings: ['오늘 리포트 생성 한도에 도달했어요.'] }
+      }
+      if (res.status === 403) {
+        return { kind: 'error', reason: 'banned', warnings: ['이용이 제한된 사용자입니다.'] }
+      }
       const data = await res.json()
       if (data.status === 'COMPLETED') {
-        return { kind: 'completed', result: data.result, reportImageUrl: data.reportImageUrl }
+        return { kind: 'completed', result: data.result, reportImageUrl: data.reportImageUrl, reportImageCached: data.reportImageCached }
       }
       if (data.status === 'VALIDATION_FAILED') {
         return { kind: 'error', reason: 'validation_failed', warnings: data.validationWarnings ?? [] }
@@ -80,20 +87,28 @@ export default function LoadingPage() {
         trackEvent('analysis_completed', { ...extractTone(result.result), elapsed_ms })
         navigate('/result', {
           replace: true,
-          state: { result: result.result, reportImageUrl: result.reportImageUrl },
+          state: { result: result.result, reportImageUrl: result.reportImageUrl, reportImageCached: result.reportImageCached },
         })
       } else {
-        // 검증 실패 누적 카운트 → 서버 응답의 failedAttempts를 attempt_no로 GA에 함께 전송
-        fetch('/api/user-behavior/analysis-failed', { method: 'POST' })
-          .then(r => r.ok ? r.json() : null)
-          .catch(() => null)
-          .then((body) => {
-            trackEvent('analysis_failed', {
-              reason: result.reason,
-              elapsed_ms,
-              attempt_no: body?.failedAttempts ?? null,
+        // rate_limited / banned 는 검증 실패가 아니므로 failed_attempts 카운터는 올리지 않는다.
+        const isValidationFailure = result.reason !== 'rate_limited' && result.reason !== 'banned'
+        if (isValidationFailure) {
+          fetch('/api/user-behavior/analysis-failed', { method: 'POST' })
+            .then(r => r.ok ? r.json() : null)
+            .catch(() => null)
+            .then((body) => {
+              trackEvent('analysis_failed', {
+                reason: result.reason,
+                elapsed_ms,
+                attempt_no: body?.failedAttempts ?? null,
+              })
             })
-          })
+        } else if (result.reason === 'rate_limited') {
+          trackEvent('rate_limit_blocked', { location: 'analysis_submit', elapsed_ms })
+        } else {
+          // banned (백엔드 인터셉터가 막은 경우)
+          trackEvent('ban_blocked', { location: 'analysis_submit' })
+        }
         navigate('/error', { replace: true, state: { warnings: result.warnings, reason: result.reason } })
       }
     })

@@ -25,7 +25,7 @@ body {
 }
 
 /* 모든 페이지 frame 공통: 정확히 420px 가운데 정렬 */
-.hm-frame, .up-frame, .ld-frame, .er-frame, .rp-frame {
+.hm-frame, .up-frame, .ld-frame, .er-frame, .rp-frame, .nf-frame {
   margin: 0 auto;
 }
 

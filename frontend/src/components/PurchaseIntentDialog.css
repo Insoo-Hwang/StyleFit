@@ -52,6 +52,33 @@
   font-weight: 500; font-size: 13.5px; line-height: 1.55;
   color: var(--ink-soft);
 }
+.pid-survey-banner {
+  margin: 0 0 20px;
+  padding: 12px 14px;
+  background: var(--green-tint);
+  border: 1.5px dashed var(--green-deep);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  text-align: left;
+}
+.pid-survey-banner-text {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--green-darker);
+  line-height: 1.5;
+}
+.pid-survey-banner-text strong { font-weight: 800; }
+.pid-survey-banner-text span { font-weight: 500; font-size: 11.5px; color: var(--green-mid); }
+.pid-survey-banner-btn {
+  background: var(--green-deep); color: #fff;
+  border: none; border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 12px; font-weight: 800; font-family: inherit;
+  cursor: pointer; white-space: nowrap; flex-shrink: 0;
+}
 
 .pid-image-wrap {
   margin: 0 0 18px;

@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route } from 'react-router-dom'
 import ScrollToTop from './components/ScrollToTop.jsx'
 import AnalyticsTracker from './components/AnalyticsTracker.jsx'
 import HomePage from './pages/HomePage.jsx'
@@ -6,6 +6,11 @@ import UploadPage from './pages/UploadPage.jsx'
 import LoadingPage from './pages/LoadingPage.jsx'
 import ErrorPage from './pages/ErrorPage.jsx'
 import ResultPage from './pages/ResultPage.jsx'
+import SharePage from './pages/SharePage.jsx'
+import ComparePage from './pages/ComparePage.jsx'
+import AdminPage from './pages/AdminPage.jsx'
+import AdminBanPage from './pages/AdminBanPage.jsx'
+import NotFoundPage from './pages/NotFoundPage.jsx'
 
 export default function App() {
   return (
@@ -18,7 +23,11 @@ export default function App() {
         <Route path="/loading" element={<LoadingPage />} />
         <Route path="/error" element={<ErrorPage />} />
         <Route path="/result" element={<ResultPage />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="/share/:token" element={<SharePage />} />
+        <Route path="/compare/:token" element={<ComparePage />} />
+        <Route path="/admin" element={<AdminPage />} />
+        <Route path="/admin/ban" element={<AdminBanPage />} />
+        <Route path="*" element={<NotFoundPage />} />
       </Routes>
     </>
   )

@@ -1,8 +1,11 @@
 package com.stylefit.analysis;
 
+import com.stylefit.ratelimit.RateLimitService;
 import com.stylefit.vision.PhotoValidationResponse;
 import com.stylefit.vision.PhotoValidationService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -10,17 +13,38 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.net.URI;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AnalysisService {
 
     private final AnalysisResultRepository repository;
     private final PhotoValidationService photoValidationService;
+    private final RateLimitService rateLimitService;
+
+    @Value("${stylefit.report.storage-dir}")
+    private String reportStorageDir;
+
+    /**
+     * AI 모듈(같은 도메인 다른 포트) URL 화이트리스트. 콤마 구분.
+     * 예: "localhost:5000,localhost:5001"
+     * 비어 있으면(dev) 호스트 검증 skip — 운영에선 반드시 설정해 SSRF 차단.
+     */
+    @Value("${stylefit.security.ai-allowed-hosts:}")
+    private String aiAllowedHosts;
 
     private static final String PRODUCT_CODE = "PERSONAL_COLOR_DIAGNOSIS";
+    private static final String REPORT_URL_PREFIX = "/report-images/";
 
     // -----------------------------------------------------------------------
     // Mock 데이터 — Python AI 서버 연동 시 교체
@@ -96,7 +120,7 @@ public class AnalysisService {
      *       (saveProcessing → [트랜잭션 종료] → AI 호출 → saveCompleted)
      */
     @Transactional
-    public AnalysisResponse submitPhoto(String cookieId, MultipartFile file) {
+    public AnalysisResponse submitPhoto(String cookieId, String clientIp, MultipartFile file) {
         if (file == null || file.isEmpty()) {
             return AnalysisResponse.validationFailed(List.of("사진을 1장 업로드해주세요."));
         }
@@ -121,21 +145,42 @@ public class AnalysisService {
             return AnalysisResponse.validationFailed(warnings);
         }
 
+        // 일일 호출 한도는 AI 모듈을 실제로 부르는 시점에만 소모.
+        // DB 캐시 재사용(위 COMPLETED 분기) / 사진 없음 / 검증 실패 / PROCESSING 충돌 케이스는 카운트 X.
+        try {
+            if (!rateLimitService.tryConsume(cookieId, clientIp)) {
+                throw new ResponseStatusException(
+                        HttpStatus.TOO_MANY_REQUESTS, "오늘 리포트 생성 한도에 도달했어요.");
+            }
+        } catch (RateLimitService.RateLimitExceededException e) {
+            throw new ResponseStatusException(
+                    HttpStatus.TOO_MANY_REQUESTS, "오늘 리포트 생성 한도에 도달했어요.");
+        }
+
         AnalysisResult entity = existing.orElseGet(() -> AnalysisResult.of(cookieId));
         entity.setStatus(AnalysisStatus.PROCESSING);
+        if (clientIp != null && !clientIp.isBlank()) {
+            entity.setLastIp(clientIp);
+        }
         repository.save(entity);
 
         // AI 분석 모듈 호출 (mock)
         String resultJson = callAiAnalysis();
 
-        // 리포트 이미지 생성 모듈 호출 (mock)
-        String reportImageUrl = callAiReportGenerator(resultJson);
+        // 리포트 이미지 생성 모듈 호출 (mock) → 받은 URL을 다운로드해 디스크에 저장하고
+        // DB에는 파일명만 보관한다. 같은 사용자가 다시 진단 결과를 열 때 또 다운로드하지 않는다.
+        String generatedUrl = callAiReportGenerator(resultJson);
+        String storedFilename = downloadAndStoreReportImage(generatedUrl);
 
         entity.setStatus(AnalysisStatus.COMPLETED);
         entity.setResultJson(resultJson);
+        entity.setReportImagePath(storedFilename);
         repository.save(entity);
 
-        return AnalysisResponse.completed(resultJson, reportImageUrl);
+        String responseUrl = (storedFilename != null)
+                ? REPORT_URL_PREFIX + storedFilename
+                : generatedUrl;  // 저장 실패 시 원본 URL 로 폴백
+        return AnalysisResponse.completed(resultJson, responseUrl, false);
     }
 
     // -----------------------------------------------------------------------
@@ -167,9 +212,97 @@ public class AnalysisService {
         return MOCK_REPORT_IMAGE_URL;
     }
 
+    /**
+     * AI 모듈에서 받은 URL을 fetch 해 디스크에 저장하고 파일명만 반환한다.
+     * 실패 시 null (호출부에서 원본 URL 로 폴백).
+     *
+     * SSRF 방어:
+     * - http/https 스킴만 허용
+     * - host:port 가 stylefit.security.ai-allowed-hosts 화이트리스트에 있어야 함
+     * - HttpURLConnection.setInstanceFollowRedirects(false) 로 redirect 차단
+     *   (redirect 응답은 실패로 처리해 우회 차단)
+     * 화이트리스트가 비어 있으면(dev) 호스트 검증 없음.
+     */
+    private String downloadAndStoreReportImage(String sourceUrl) {
+        try {
+            URI uri = URI.create(sourceUrl);
+            if (!isAllowedAiUrl(uri)) {
+                log.warn("blocked SSRF candidate URL: scheme={} host={} port={}",
+                        uri.getScheme(), uri.getHost(), uri.getPort());
+                return null;
+            }
+            java.net.HttpURLConnection conn =
+                    (java.net.HttpURLConnection) uri.toURL().openConnection();
+            conn.setInstanceFollowRedirects(false);
+            conn.setConnectTimeout(5_000);
+            conn.setReadTimeout(15_000);
+            int code = conn.getResponseCode();
+            if (code >= 300 && code < 400) {
+                log.warn("redirect blocked from AI module: code={}", code);
+                return null;
+            }
+            if (code != 200) {
+                log.warn("AI module returned non-200: code={}", code);
+                return null;
+            }
+            String contentType = conn.getContentType();
+            String ext = pickExtension(contentType);
+            String filename = UUID.randomUUID() + "." + ext;
+
+            Path dir = Paths.get(reportStorageDir).toAbsolutePath();
+            Files.createDirectories(dir);
+            Path target = dir.resolve(filename);
+
+            try (InputStream in = conn.getInputStream()) {
+                Files.copy(in, target, StandardCopyOption.REPLACE_EXISTING);
+            }
+            return filename;
+        } catch (IOException e) {
+            log.warn("report image download failed: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private boolean isAllowedAiUrl(URI uri) {
+        if (uri == null) return false;
+        String scheme = uri.getScheme();
+        if (scheme == null) return false;
+        if (!scheme.equalsIgnoreCase("http") && !scheme.equalsIgnoreCase("https")) return false;
+        if (uri.getHost() == null || uri.getHost().isBlank()) return false;
+        if (aiAllowedHosts == null || aiAllowedHosts.isBlank()) {
+            // dev 모드 — 화이트리스트 미설정이면 호스트 검증 skip (운영에선 반드시 설정)
+            return true;
+        }
+        String hostPort = uri.getPort() < 0
+                ? uri.getHost()
+                : uri.getHost() + ":" + uri.getPort();
+        String hostOnly = uri.getHost();
+        for (String entry : aiAllowedHosts.split(",")) {
+            String e = entry.trim();
+            if (e.isEmpty()) continue;
+            if (e.equalsIgnoreCase(hostPort) || e.equalsIgnoreCase(hostOnly)) return true;
+        }
+        return false;
+    }
+
+    private static String pickExtension(String contentType) {
+        if (contentType == null) return "img";
+        String ct = contentType.toLowerCase();
+        if (ct.contains("png")) return "png";
+        if (ct.contains("jpeg") || ct.contains("jpg")) return "jpg";
+        if (ct.contains("svg")) return "svg";
+        if (ct.contains("webp")) return "webp";
+        if (ct.contains("gif")) return "gif";
+        return "img";
+    }
+
     private AnalysisResponse toResponse(AnalysisResult record) {
         return switch (record.getStatus()) {
-            case COMPLETED -> AnalysisResponse.completed(record.getResultJson(), MOCK_REPORT_IMAGE_URL);
+            case COMPLETED -> {
+                String stored = record.getReportImagePath();
+                String url = (stored != null) ? REPORT_URL_PREFIX + stored : MOCK_REPORT_IMAGE_URL;
+                yield AnalysisResponse.completed(record.getResultJson(), url, stored != null);
+            }
             case PROCESSING -> AnalysisResponse.processing();
             case FAILED -> AnalysisResponse.photoRequired();
         };

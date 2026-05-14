@@ -1,0 +1,126 @@
+.ab-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  gap: 10px;
+}
+.ab-stats {
+  font-size: 13px;
+  color: #6a716b;
+}
+.ab-refresh {
+  background: #fff;
+  border: 1px solid #d8ddcb;
+  color: #2a3f33;
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.ab-refresh:disabled { opacity: 0.5; cursor: default; }
+
+.ab-banbar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  background: #fff;
+  border: 1px solid #d8ddcb;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.ab-reason {
+  flex: 1;
+  min-width: 200px;
+  border: 1px solid #d8ddcb;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-family: inherit;
+  background: #fafbf5;
+}
+.ab-reason:focus {
+  outline: none;
+  border-color: #2a3f33;
+  background: #fff;
+}
+.ab-actions {
+  display: flex;
+  gap: 6px;
+}
+.ab-btn {
+  background: #b8523a;
+  color: #fff;
+  border: none;
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.ab-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.ab-btn-secondary {
+  background: #6a716b;
+}
+
+.ab-msg {
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+.ab-msg-ok {
+  background: #e8f0e0;
+  color: #2a3f33;
+  border: 1px solid #c8d6b8;
+}
+.ab-msg-err {
+  background: #f6e2dc;
+  color: #8a3a26;
+  border: 1px solid #e8b8a8;
+}
+
+.ab-table .ab-check {
+  width: 36px;
+  text-align: center;
+}
+.ab-mono {
+  font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+  font-size: 11px;
+}
+.ab-row-checked {
+  background: #fdf8ec;
+}
+.ab-tag {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 3px;
+  margin-right: 4px;
+}
+.ab-tag-red {
+  background: #f6e2dc;
+  color: #8a3a26;
+}
+.ab-tag-ok {
+  color: #6a716b;
+}
+.ab-unban {
+  background: transparent;
+  border: 1px solid #6a716b;
+  color: #6a716b;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ab-unban:disabled { opacity: 0.5; cursor: default; }

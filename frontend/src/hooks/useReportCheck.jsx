@@ -22,7 +22,7 @@ export default function useReportCheck(location = 'unknown') {
       trackEvent('my_report_click', { location, has_report: hasReport })
       if (hasReport) {
         navigate('/result', {
-          state: { result: data.result, reportImageUrl: data.reportImageUrl },
+          state: { result: data.result, reportImageUrl: data.reportImageUrl, reportImageCached: data.reportImageCached },
         })
       } else {
         setOpen(true)

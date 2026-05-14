@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import useReportCheck from '../hooks/useReportCheck.jsx'
 import { trackEvent } from '../analytics'
@@ -42,6 +42,7 @@ export default function UploadPage() {
   const [photo, setPhoto] = useState(null)   // { file, url } | null
   const [isDrag, setIsDrag] = useState(false)
   const [warning, setWarning] = useState('')
+  const [banned, setBanned] = useState(false)
   const fileInputRef = useRef(null)
   const { checkReport, dialog } = useReportCheck('upload_tabbar')
 
@@ -49,6 +50,22 @@ export default function UploadPage() {
   const attachedAtRef = useRef(null)
   // 세션 내 사진 교체 횟수
   const replacedCountRef = useRef(0)
+
+  // 차단된 쿠키/IP 사용자는 업로드 진입 자체를 막는다.
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/ban/check', { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (cancelled || !data) return
+        if (data.banned) {
+          setBanned(true)
+          trackEvent('ban_blocked', { location: 'upload_mount' })
+        }
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
 
   const setFile = (file) => {
     setPhoto(prev => {
@@ -103,7 +120,7 @@ export default function UploadPage() {
       if (data.status === 'COMPLETED') {
         trackEvent('analysis_reused', { source: 'upload_submit' })
         navigate('/result', {
-          state: { result: data.result, reportImageUrl: data.reportImageUrl },
+          state: { result: data.result, reportImageUrl: data.reportImageUrl, reportImageCached: data.reportImageCached },
         })
         return
       }
@@ -137,7 +154,46 @@ export default function UploadPage() {
     }
   }
 
-  const canSubmit = !!photo
+  const canSubmit = !!photo && !banned
+
+  if (banned) {
+    return (
+      <div className="up-frame" data-screen-label="Upload-Banned">
+        <header className="up-topnav">
+          <span />
+          <h1 className="up-title">사진 업로드</h1>
+          <span />
+        </header>
+        <div className="up-banned">
+          <div className="up-banned-ico" aria-hidden="true">
+            <svg viewBox="0 0 64 64" fill="none">
+              <circle cx="32" cy="32" r="26" stroke="currentColor" strokeWidth="3" />
+              <line x1="14" y1="14" x2="50" y2="50" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+            </svg>
+          </div>
+          <h2>이용이 제한된 사용자입니다</h2>
+          <p>현재 계정 또는 접속 환경에서는 사진 업로드를 이용할 수 없어요.<br />문의가 필요하시면 운영팀에 연락해 주세요.</p>
+          <button className="up-cta" type="button" onClick={() => navigate('/')}>
+            홈으로 돌아가기
+          </button>
+        </div>
+        <nav className="up-tabbar" aria-label="탭바">
+          <div className="up-tabbar-inner">
+            <button className="up-tab" type="button" onClick={() => navigate('/')}>
+              <span className="up-tico"><svg viewBox="0 0 24 24" fill="none"><path d="M4 11l8-7 8 7v9a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1v-9z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" /></svg></span>홈
+            </button>
+            <button className="up-tab active up-cta-tab" type="button" disabled>
+              <span className="up-tico"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="6" width="16" height="14" rx="2" stroke="currentColor" strokeWidth="1.8" /><circle cx="12" cy="13" r="3.5" stroke="currentColor" strokeWidth="1.8" /></svg></span>진단하기
+            </button>
+            <button className="up-tab" type="button" onClick={checkReport}>
+              <span className="up-tico"><svg viewBox="0 0 24 24" fill="none"><rect x="5" y="4" width="14" height="17" rx="2" stroke="currentColor" strokeWidth="1.6" /><line x1="8" y1="9" x2="16" y2="9" stroke="currentColor" strokeWidth="1.6" /><line x1="8" y1="13" x2="14" y2="13" stroke="currentColor" strokeWidth="1.6" /></svg></span>내 리포트
+            </button>
+          </div>
+        </nav>
+        {dialog}
+      </div>
+    )
+  }
 
   return (
     <div className="up-frame" data-screen-label="Upload">

@@ -1,0 +1,80 @@
+.shd-backdrop {
+  position: fixed; inset: 0; z-index: 100;
+  background: rgba(28, 28, 26, 0.45);
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+  animation: shd-fade 160ms ease-out;
+}
+@keyframes shd-fade { from { opacity: 0; } to { opacity: 1; } }
+
+.shd-card {
+  width: 100%; max-width: 340px;
+  background: var(--paper);
+  border: 1.5px solid var(--green-deep);
+  border-radius: 8px;
+  padding: 28px 22px 24px;
+  text-align: center;
+  position: relative;
+  box-shadow: 4px 4px 0 var(--green-darker);
+  animation: shd-pop 180ms ease-out;
+}
+@keyframes shd-pop {
+  from { transform: translateY(8px) scale(0.96); opacity: 0; }
+  to   { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+.shd-close {
+  position: absolute; top: 12px; right: 12px;
+  width: 28px; height: 28px;
+  background: none; border: 0; cursor: pointer;
+  color: var(--green-mid); padding: 2px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 999px;
+  transition: background 120ms;
+}
+.shd-close:hover { background: var(--paper-card); color: var(--green-darker); }
+.shd-close svg { width: 18px; height: 18px; }
+
+.shd-icon {
+  width: 58px; height: 58px; margin: 0 auto 14px;
+  border: 1.4px dashed var(--green-mid); border-radius: 999px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--green-deep); background: var(--paper-card);
+}
+.shd-icon svg { width: 30px; height: 30px; }
+
+.shd-title {
+  margin: 0 0 6px;
+  font-weight: 900; font-size: 18px; letter-spacing: -0.02em;
+  color: var(--green-darker);
+}
+.shd-sub {
+  margin: 0 0 22px;
+  font-weight: 500; font-size: 13px;
+  color: var(--ink-soft);
+}
+
+.shd-actions {
+  display: flex; flex-direction: column; gap: 10px;
+}
+
+.shd-btn {
+  height: 52px; border-radius: 999px;
+  font-weight: 700; font-size: 14px; letter-spacing: 0.01em;
+  cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;
+  border: none; transition: opacity 120ms, background 120ms;
+}
+.shd-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.shd-kakao {
+  background: #FEE500; color: #191919;
+  border: 1.5px solid #e6cf00;
+}
+.shd-kakao:hover:not(:disabled) { background: #f5dc00; }
+
+.shd-url {
+  background: var(--green-deep); color: var(--paper);
+  border: 1.5px solid var(--green-darker);
+}
+.shd-url:hover:not(:disabled) { background: var(--green-darker); }
+.shd-url.copied { background: var(--green-darker); }

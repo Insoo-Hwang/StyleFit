@@ -1,6 +1,7 @@
 package com.stylefit.analysis;
 
 import com.stylefit.auth.AnonymousCookieFilter;
+import com.stylefit.ban.BanService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -16,6 +17,7 @@ import org.springframework.web.multipart.MultipartFile;
 public class AnalysisController {
 
     private final AnalysisService analysisService;
+    private final BanService banService;
 
     /**
      * 기존 분석 결과 여부를 확인한다.
@@ -34,12 +36,14 @@ public class AnalysisController {
      * - VALIDATION_FAILED: 사진 검증 실패 (validationWarnings 포함)
      * - COMPLETED:         분석 완료 (result, reportImageUrl 포함)
      * - 409 Conflict:      이미 처리 중
+     * - 429 Too Many:      글로벌/쿠키/IP 일일 한도 초과
      */
     @PostMapping("/submit-photo")
     public ResponseEntity<AnalysisResponse> submitPhoto(
             @RequestParam("file") MultipartFile file,
             HttpServletRequest request) {
         String cookieId = (String) request.getAttribute(AnonymousCookieFilter.REQUEST_ATTR);
-        return ResponseEntity.ok(analysisService.submitPhoto(cookieId, file));
+        String clientIp = banService.extractClientIp(request);
+        return ResponseEntity.ok(analysisService.submitPhoto(cookieId, clientIp, file));
     }
 }

@@ -37,6 +37,13 @@ public class AnalysisResult {
     @Column(name = "result_json", columnDefinition = "TEXT")
     private String resultJson;
 
+    @Column(name = "report_image_path", length = 500)
+    private String reportImagePath;
+
+    /** 마지막 submit-photo 요청의 클라이언트 IP — 어드민 차단 화면에서 cookie↔ip 페어 매칭용 */
+    @Column(name = "last_ip", length = 45)
+    private String lastIp;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 

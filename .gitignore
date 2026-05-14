@@ -46,5 +46,9 @@ frontend/.env.*.local
 # Vite build output embedded into Spring Boot
 src/main/resources/static/
 
+### Runtime artifacts ###
+# 최초 분석 시 AI 모듈에서 받아 디스크에 저장하는 리포트 이미지 캐시
+report-images/
+
 ### macOS ###
 .DS_Store

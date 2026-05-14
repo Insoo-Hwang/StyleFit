@@ -19,6 +19,9 @@ public class AnalysisResponse {
     private String result;
 
     private String reportImageUrl;
+    // true  = DB에 보관된 파일을 재사용한 응답
+    // false = 이번 호출에서 AI 모듈을 거쳐 새로 생성/저장된 이미지
+    private Boolean reportImageCached;
     private List<String> validationWarnings;
 
     public static AnalysisResponse photoRequired() {
@@ -29,11 +32,12 @@ public class AnalysisResponse {
         return builder().status("PROCESSING").build();
     }
 
-    public static AnalysisResponse completed(String resultJson, String reportImageUrl) {
+    public static AnalysisResponse completed(String resultJson, String reportImageUrl, boolean reportImageCached) {
         return builder()
                 .status("COMPLETED")
                 .result(resultJson)
                 .reportImageUrl(reportImageUrl)
+                .reportImageCached(reportImageCached)
                 .build();
     }
 

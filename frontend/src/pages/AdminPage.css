@@ -1,0 +1,226 @@
+.ap-frame {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 24px 24px 64px;
+  font-family: 'Pretendard Variable', Pretendard, sans-serif;
+  color: #1d211e;
+  background: #f6f8f1;
+  min-height: 100vh;
+}
+
+.ap-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  border-bottom: 2px solid #2a3f33;
+  padding-bottom: 12px;
+}
+.ap-header h1 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+}
+.ap-logout {
+  border: 1px solid #2a3f33;
+  background: transparent;
+  color: #2a3f33;
+  font-weight: 700;
+  font-size: 13px;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.ap-logout:hover { background: #2a3f33; color: #fff; }
+
+.ap-section {
+  margin-bottom: 32px;
+}
+.ap-section h2 {
+  margin: 0 0 12px;
+  font-size: 15px;
+  font-weight: 800;
+  color: #2a3f33;
+  letter-spacing: 0.04em;
+}
+
+.ap-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+.ap-card {
+  background: #fff;
+  border: 1px solid #d8ddcb;
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+.ap-card-title {
+  font-size: 12px;
+  color: #6a716b;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.ap-card-value {
+  font-size: 24px;
+  font-weight: 900;
+  color: #1d211e;
+  line-height: 1.1;
+}
+.ap-card-sub {
+  font-size: 11px;
+  color: #6a716b;
+  margin-top: 6px;
+  font-weight: 500;
+}
+
+.ap-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+  border-bottom: 1px solid #d8ddcb;
+}
+.ap-tab {
+  background: none;
+  border: none;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #6a716b;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.ap-tab.active {
+  color: #2a3f33;
+  border-bottom-color: #2a3f33;
+  font-weight: 800;
+}
+
+.ap-table-wrap {
+  background: #fff;
+  border: 1px solid #d8ddcb;
+  border-radius: 8px;
+  overflow-x: auto;
+}
+.ap-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.ap-table th,
+.ap-table td {
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid #ebede2;
+  white-space: nowrap;
+}
+.ap-table th {
+  background: #fafbf5;
+  font-weight: 700;
+  color: #6a716b;
+}
+.ap-table tr:last-child td { border-bottom: none; }
+.ap-table td {
+  font-variant-numeric: tabular-nums;
+}
+
+.ap-loading,
+.ap-empty {
+  padding: 40px 24px;
+  text-align: center;
+  color: #6a716b;
+  font-size: 13px;
+}
+
+.ap-quicklinks .ap-link {
+  background: #fff;
+  border: 1.5px dashed #2a3f33;
+  color: #2a3f33;
+  padding: 14px 18px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 3px 3px 0 #2a3f33;
+}
+.ap-quicklinks .ap-link:hover {
+  background: #2a3f33;
+  color: #fff;
+}
+.ap-link-arrow { font-size: 16px; }
+.ap-link-sub {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #6a716b;
+}
+
+/* LOGIN */
+.ap-login-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background: #f6f8f1;
+  padding: 24px;
+}
+.ap-login {
+  width: 100%;
+  max-width: 360px;
+  background: #fff;
+  border: 1.5px solid #2a3f33;
+  border-radius: 12px;
+  padding: 28px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: 4px 4px 0 #2a3f33;
+}
+.ap-login h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 900;
+  color: #2a3f33;
+  text-align: center;
+}
+.ap-login-sub {
+  margin: -4px 0 0;
+  font-size: 12px;
+  color: #6a716b;
+  text-align: center;
+}
+.ap-login input {
+  border: 1px solid #d8ddcb;
+  border-radius: 6px;
+  padding: 12px 14px;
+  font-size: 14px;
+  font-family: inherit;
+  background: #fafbf5;
+}
+.ap-login input:focus {
+  outline: none;
+  border-color: #2a3f33;
+  background: #fff;
+}
+.ap-login button {
+  background: #2a3f33;
+  color: #fff;
+  border: none;
+  padding: 12px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.ap-login button:disabled { opacity: 0.5; cursor: default; }
+.ap-login-err {
+  font-size: 12px;
+  color: #b8523a;
+  text-align: center;
+  margin: -4px 0 0;
+}

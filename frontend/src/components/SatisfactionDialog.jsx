@@ -102,7 +102,7 @@ export default function SatisfactionDialog({
           maxLength={COMMENT_MAX}
           value={comment}
           onChange={handleCommentChange}
-          placeholder="어떤 점이 좋았고, 어떤 점이 아쉬웠는지 자유롭게 적어주세요."
+          placeholder="어떤 점이 좋았고, 어떤 점이 아쉬웠는지 알려주세요. 앞으로 원하시는 기능이 있다면 함께 적어주세요."
         />
 
         <div className="sd-actions">

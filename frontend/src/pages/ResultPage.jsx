@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import SatisfactionDialog from '../components/SatisfactionDialog.jsx'
 import PurchaseIntentDialog from '../components/PurchaseIntentDialog.jsx'
+import ShareDialog from '../components/ShareDialog.jsx'
 import { trackEvent } from '../analytics'
 import './ResultPage.css'
 
@@ -41,9 +42,17 @@ export default function ResultPage() {
   const [surveyOpen, setSurveyOpen] = useState(false)
   const [surveyInit, setSurveyInit] = useState({ rating: 0, gender: null, comment: '', isEdit: false })
   const [surveySubmitting, setSurveySubmitting] = useState(false)
+  const [surveyDone, setSurveyDone] = useState(null)
 
   // 결제 의향 다이얼로그 상태
   const [purchaseOpen, setPurchaseOpen] = useState(false)
+  const [reportDownloading, setReportDownloading] = useState(false)
+  const [hasViewedReport, setHasViewedReport] = useState(false)
+
+  // 공유 토큰
+  const [shareToken, setShareToken] = useState(null)
+  const [shareBusy, setShareBusy] = useState(false)
+  const [shareDialogOpen, setShareDialogOpen] = useState(false)
 
   // 스크롤 깊이 — 도달한 최대 인덱스만 갱신
   const maxScrollIndexRef = useRef(-1)
@@ -55,13 +64,28 @@ export default function ResultPage() {
       .then(r => r.json())
       .then(res => {
         if (res.status === 'COMPLETED') {
-          setData({ result: parseResult(res.result), reportImageUrl: res.reportImageUrl })
+          setData({
+            result: parseResult(res.result),
+            reportImageUrl: res.reportImageUrl,
+            reportImageCached: res.reportImageCached,
+          })
         } else {
           navigate('/upload', { replace: true })
         }
       })
       .catch(() => navigate('/upload', { replace: true }))
   }, [])
+
+  // 결과 로딩 후 만족도 완료 여부 확인 — N°10 섹션 독려 문구 제어용
+  useEffect(() => {
+    if (!data) return
+    let alive = true
+    fetch('/api/survey/satisfaction')
+      .then(r => r.ok ? r.json() : null)
+      .then(b => { if (alive) setSurveyDone(b ? !!b.exists : false) })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [data])
 
   // 결과 로딩 완료 시 1회 result_view 전송 (personalColor/mainType만 — 카테고리값)
   useEffect(() => {
@@ -72,6 +96,12 @@ export default function ResultPage() {
       personal_color: r.personalColor ?? 'unknown',
       main_type: r.mainType ?? 'unknown',
     })
+    // 리포트 이미지가 새로 생성된 건지 / DB 캐시 재사용인지 추적 (캐시 적중률 측정)
+    if (typeof data.reportImageCached === 'boolean') {
+      trackEvent('report_image_resolved', {
+        source: data.reportImageCached ? 'cached' : 'generated',
+      })
+    }
     // 결과 페이지 진입 카운트 — 마운트당 1회만
     if (!revisitMarkedRef.current) {
       revisitMarkedRef.current = true
@@ -133,6 +163,7 @@ export default function ResultPage() {
 
   const handlePurchaseYes = async () => {
     trackEvent('purchase_choice', { choice: 'yes' })
+    setHasViewedReport(true)
     try {
       await fetch('/api/purchase-intent/yes', { method: 'POST' })
     } catch { /* 무시 — 다이얼로그는 stage 2로 진행 */ }
@@ -144,6 +175,65 @@ export default function ResultPage() {
     if (stage === 1) trackEvent('purchase_choice', { choice: 'no' })
     setPurchaseOpen(false)
   }
+
+  const handleReportDownload = async () => {
+    const url = data.reportImageUrl
+    if (!url || reportDownloading) return
+    trackEvent('report_download_click', { location: 'purchase_dialog_stage2' })
+    setReportDownloading(true)
+    try {
+      const res = await fetch(url, { mode: 'cors' })
+      if (!res.ok) throw new Error('fetch_failed')
+      const blob = await res.blob()
+      const ext = (blob.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg')
+      const objectUrl = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = objectUrl
+      a.download = `stylefit_report_${formatToday().replace(/\./g, '')}.${ext}`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(objectUrl)
+      trackEvent('report_download_success', { size_kb: Math.round(blob.size / 1024) })
+    } catch {
+      // CORS 등으로 blob 받기가 실패하면 새 탭으로 폴백 — 사용자가 직접 저장
+      trackEvent('report_download_failed', { reason: 'fetch_or_cors' })
+      window.open(url, '_blank', 'noopener,noreferrer')
+    } finally {
+      setReportDownloading(false)
+    }
+  }
+
+  const handleShareCreate = async () => {
+    if (shareBusy) return
+    trackEvent('share_create_click', { has_token: !!shareToken })
+    if (shareToken) {
+      setShareDialogOpen(true)
+      return
+    }
+    setShareBusy(true)
+    try {
+      const res = await fetch('/api/share/create', { method: 'POST' })
+      if (!res.ok) throw new Error('create_failed')
+      const body = await res.json()
+      setShareToken(body.token)
+      setShareDialogOpen(true)
+    } catch {
+      trackEvent('share_create_failed', { reason: 'network' })
+      alert('공유 링크 생성에 실패했어요. 잠시 후 다시 시도해주세요.')
+    } finally {
+      setShareBusy(false)
+    }
+  }
+
+  useEffect(() => {
+    const ac = new AbortController()
+    fetch('/api/share/me', { signal: ac.signal })
+      .then(r => r.ok ? r.json() : null)
+      .then(b => { if (b?.token) setShareToken(b.token) })
+      .catch(() => {})
+    return () => ac.abort()
+  }, [])
 
   const handleSurvey = async () => {
     trackEvent('result_action', { action: 'survey_click' })
@@ -183,6 +273,7 @@ export default function ResultPage() {
         is_edit: surveyInit.isEdit,
       })
       setSurveyOpen(false)
+      setSurveyDone(true)
     } catch {
       trackEvent('survey_submit_failed', { rating, gender })
       alert('저장에 실패했어요. 잠시 후 다시 시도해주세요.')
@@ -203,11 +294,25 @@ export default function ResultPage() {
         onClose={() => !surveySubmitting && setSurveyOpen(false)}
         onSubmit={handleSurveySubmit}
       />
+      {shareToken && (
+        <ShareDialog
+          open={shareDialogOpen}
+          shareUrl={`${window.location.origin}/share/${shareToken}`}
+          reportImageUrl={data.reportImageUrl}
+          personalColor={r.personalColor}
+          onClose={() => setShareDialogOpen(false)}
+        />
+      )}
       <PurchaseIntentDialog
         open={purchaseOpen}
         imageUrl={data.reportImageUrl}
         onClose={handlePurchaseClose}
         onYes={handlePurchaseYes}
+        onDownload={handleReportDownload}
+        downloading={reportDownloading}
+        surveyDone={surveyDone}
+        onSurveyClick={handleSurvey}
+        skipPayment={!!data.reportImageCached || hasViewedReport}
       />
       <header className="rp-topnav">
         <span />
@@ -331,8 +436,26 @@ export default function ResultPage() {
       <div className="rp-shead" data-rp-section="shop" data-rp-index="8"><span className="rp-ix">N°08</span><h2>쇼핑 검색어</h2></div>
       <ComingSoonCard />
 
-      {/* N°09 SURVEY */}
-      <div className="rp-shead" data-rp-section="survey" data-rp-index="9"><span className="rp-ix">N°09</span><h2>리포트 만족도</h2></div>
+      {/* N°09 SHARE — 결과 공유 토큰 */}
+      <div className="rp-shead" data-rp-section="share" data-rp-index="9"><span className="rp-ix">N°09</span><h2>친구에게 공유</h2></div>
+      <div className="rp-share">
+        <div className="rp-share-l">
+          {shareToken
+            ? '공유 링크가 발급되어 있어요'
+            : '내 진단 결과를 친구에게 보여주세요'}
+          <span className="rp-share-sub">
+            {'링크를 받은 친구도 자기 진단을 받을 수 있어요'}
+          </span>
+        </div>
+        <div className="rp-share-actions">
+          <button type="button" className="rp-share-go" onClick={handleShareCreate} disabled={shareBusy}>
+            {shareToken ? '공유하기' : '공유 링크 만들기'}
+          </button>
+        </div>
+      </div>
+
+      {/* N°10 SURVEY */}
+      <div className="rp-shead" data-rp-section="survey" data-rp-index="10"><span className="rp-ix">N°10</span><h2>리포트 만족도</h2></div>
       <div className="rp-surv">
         <div className="rp-surv-l">
           리포트가 도움이 되셨나요?
@@ -341,15 +464,15 @@ export default function ResultPage() {
         <button type="button" className="rp-surv-go" onClick={handleSurvey}>만족도 평가 →</button>
       </div>
 
-      {/* N°10 PURCHASE — 베타 기간 동안은 결제 의향만 측정 */}
-      <div className="rp-shead" data-rp-section="purchase" data-rp-index="10"><span className="rp-ix">N°10</span><h2>이미지 리포트</h2></div>
+      {/* N°11 PURCHASE — 베타 기간 동안은 결제 의향만 측정 */}
+      <div className="rp-shead" data-rp-section="purchase" data-rp-index="11"><span className="rp-ix">N°11</span><h2>이미지 리포트</h2></div>
       <div className="rp-actions single">
         <button className="rp-btn-act" type="button" onClick={handlePurchaseOpen}>
           <svg viewBox="0 0 24 24" fill="none">
             <rect x="4" y="6" width="16" height="13" rx="2" stroke="currentColor" strokeWidth="1.8" />
             <line x1="4" y1="10" x2="20" y2="10" stroke="currentColor" strokeWidth="1.8" />
           </svg>
-          1,990원으로 이미지 리포트 받아보기
+          {data.reportImageCached ? '이미지 리포트 보기' : '1,990원으로 이미지 리포트 받아보기'}
         </button>
       </div>
 

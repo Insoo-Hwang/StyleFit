@@ -1,5 +1,7 @@
 package com.stylefit.survey;
 
+import com.stylefit.analysis.AnalysisResultRepository;
+import com.stylefit.analysis.AnalysisStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -13,8 +15,10 @@ import java.util.Optional;
 public class SatisfactionSurveyService {
 
     private static final int COMMENT_MAX = 300;
+    private static final String PRODUCT_CODE = "PERSONAL_COLOR_DIAGNOSIS";
 
     private final SatisfactionSurveyRepository repository;
+    private final AnalysisResultRepository analysisResultRepository;
 
     public SatisfactionSurveyResponse get(String cookieId) {
         return repository.findById(cookieId)
@@ -24,6 +28,16 @@ public class SatisfactionSurveyService {
 
     @Transactional
     public SatisfactionSurveyResponse upsert(String cookieId, SatisfactionSurveyRequest req) {
+        // COMPLETED 결과 없는 사용자가 직접 API 호출로 평가 작성하는 것을 차단.
+        boolean hasCompleted = analysisResultRepository
+                .findByCookieIdAndProductCode(cookieId, PRODUCT_CODE)
+                .map(r -> r.getStatus() == AnalysisStatus.COMPLETED)
+                .orElse(false);
+        if (!hasCompleted) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "진단 결과가 있어야 평가할 수 있습니다.");
+        }
+
         Short rating = req.getRating();
         if (rating == null || rating < 1 || rating > 5) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "별점은 1~5 사이여야 합니다.");

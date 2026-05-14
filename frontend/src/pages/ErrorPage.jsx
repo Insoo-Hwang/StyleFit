@@ -10,6 +10,16 @@ export default function ErrorPage() {
   const reason = state?.reason ?? 'unknown'
   const { checkReport, dialog } = useReportCheck('error_tabbar')
 
+  const isRateLimited = reason === 'rate_limited'
+  const isBanned = reason === 'banned'
+  const headerTitle = isRateLimited ? '오늘 한도 도달' : (isBanned ? '이용 제한' : '분석 실패')
+  const heading = isRateLimited ? '오늘 리포트 생성 한도에 도달했어요' : (isBanned ? '이용이 제한된 사용자입니다' : '분석에 실패했습니다')
+  const subCopy = isRateLimited
+    ? <>하루 최대 횟수까지 진단을 받으셨어요.<br />내일 다시 시도해주세요.</>
+    : (isBanned
+        ? <>현재 계정 또는 접속 환경에서는<br />사진 업로드를 이용할 수 없어요.</>
+        : <>사진 품질 문제로<br />분석을 완료하지 못했습니다.</>)
+
   const goRetry = (location) => {
     trackEvent('retry_clicked', { reason, location })
     navigate('/upload')
@@ -20,7 +30,7 @@ export default function ErrorPage() {
       {dialog}
       <header className="er-topnav">
         <span />
-        <h1 className="er-title">분석 실패</h1>
+        <h1 className="er-title">{headerTitle}</h1>
         <span />
       </header>
 
@@ -31,30 +41,32 @@ export default function ErrorPage() {
             <line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
           </svg>
         </div>
-        <h2>분석에 실패했습니다</h2>
-        <p className="er-sub">
-          사진 품질 문제로<br />분석을 완료하지 못했습니다.
-        </p>
+        <h2>{heading}</h2>
+        <p className="er-sub">{subCopy}</p>
 
-        {warnings.length > 0 && (
+        {!isRateLimited && !isBanned && warnings.length > 0 && (
           <ul className="er-warnings">
             {warnings.map((w, i) => <li key={i}>{w}</li>)}
           </ul>
         )}
 
         <div className="er-actions">
-          <button className="er-cta" type="button" onClick={() => goRetry('error_cta')}>
-            다른 사진으로 다시 시도 <span className="er-cta-arrow">→</span>
-          </button>
+          {!isRateLimited && !isBanned && (
+            <button className="er-cta" type="button" onClick={() => goRetry('error_cta')}>
+              다른 사진으로 다시 시도 <span className="er-cta-arrow">→</span>
+            </button>
+          )}
           <button className="er-link" type="button" onClick={() => navigate('/')}>
             처음으로 돌아가기
           </button>
         </div>
 
-        <aside className="er-tip">
-          <p className="er-tip-h">— a quick tip —</p>
-          정면을 보고 찍은, 자연광에서의 사진이 가장 분석이 잘 됩니다. 선글라스·마스크·강한 보정은 피해주세요.
-        </aside>
+        {!isRateLimited && !isBanned && (
+          <aside className="er-tip">
+            <p className="er-tip-h">— a quick tip —</p>
+            정면을 보고 찍은, 자연광에서의 사진이 가장 분석이 잘 됩니다. 선글라스·마스크·강한 보정은 피해주세요.
+          </aside>
+        )}
       </main>
 
       <nav className="er-tabbar" aria-label="탭바">

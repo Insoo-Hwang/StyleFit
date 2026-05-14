@@ -1,0 +1,84 @@
+.nf-frame {
+  width: 100%;
+  max-width: 420px;
+  background: var(--paper);
+  min-height: 100dvh;
+  position: relative;
+  padding-bottom: 96px;
+  display: flex;
+  flex-direction: column;
+}
+
+.nf-topnav {
+  display: grid; grid-template-columns: 40px 1fr 40px; align-items: center;
+  padding: calc(env(safe-area-inset-top) + 14px) 18px 12px;
+  background: var(--paper); border-bottom: 1px solid var(--green-mid);
+}
+.nf-title { margin: 0; text-align: center; font-weight: 900; font-size: 17px; color: var(--green-darker); }
+
+.nf-main {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  padding: 24px; text-align: center; gap: 20px;
+}
+
+.nf-code {
+  font-family: 'Caveat', cursive;
+  font-size: 96px; line-height: 1;
+  color: var(--green-deep);
+  letter-spacing: 0.04em;
+  text-shadow: 3px 3px 0 var(--green-mid);
+  margin-bottom: -8px;
+}
+
+.nf-card {
+  width: 100%; max-width: 340px;
+  border: 1.5px dashed var(--green-mid);
+  border-radius: 12px;
+  background: var(--paper-card);
+  padding: 24px 20px;
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  box-shadow: 3px 3px 0 var(--green-mid);
+}
+.nf-mark {
+  width: 56px; height: 56px;
+  color: var(--green-deep);
+}
+.nf-mark svg { width: 100%; height: 100%; }
+.nf-card h2 { margin: 0; font-weight: 900; font-size: 18px; color: var(--green-darker); }
+.nf-sub { margin: 0; font-weight: 500; font-size: 13.5px; color: var(--ink-soft); line-height: 1.6; }
+
+.nf-actions {
+  width: 100%; max-width: 340px;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.nf-cta {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  width: 100%; height: 54px; border-radius: 999px;
+  background: var(--green-deep); color: var(--paper);
+  border: 1.5px solid var(--green-darker);
+  font-weight: 700; letter-spacing: 0.04em; font-size: 16px;
+  cursor: pointer; transition: background 120ms;
+}
+.nf-cta:hover { background: var(--green-darker); }
+.nf-cta-arrow { font-family: 'Caveat', cursive; font-size: 22px; }
+.nf-link {
+  font-weight: 600; font-size: 14px; color: var(--green-deep);
+  text-decoration: underline; text-decoration-style: dashed; text-underline-offset: 4px;
+  background: none; border: 0; cursor: pointer; padding: 6px;
+}
+
+.nf-tabbar { position: fixed; left: 0; right: 0; bottom: 0; display: flex; justify-content: center; z-index: 20; }
+.nf-tabbar-inner {
+  width: 100%; max-width: 420px;
+  background: var(--paper); border-top: 1px solid var(--green-mid);
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  padding: 8px 0 calc(env(safe-area-inset-bottom) + 8px);
+}
+.nf-tab {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 6px 0; cursor: pointer;
+  font-weight: 600; font-size: 12px; color: var(--green-mid);
+  background: none; border: 0; position: relative;
+}
+.nf-tico { width: 24px; height: 24px; color: var(--green-mid); display: flex; align-items: center; justify-content: center; }

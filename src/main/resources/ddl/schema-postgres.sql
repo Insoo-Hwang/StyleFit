@@ -2,13 +2,18 @@
 -- H2(개발)에서 PostgreSQL(운영)으로 전환 시 이 파일로 테이블 생성
 
 CREATE TABLE analysis_result (
-    id           BIGSERIAL       PRIMARY KEY,
-    cookie_id    VARCHAR(36)     NOT NULL,
-    product_code VARCHAR(50)     NOT NULL DEFAULT 'PERSONAL_COLOR_DIAGNOSIS',
-    status       VARCHAR(20)     NOT NULL DEFAULT 'PROCESSING',
-    result_json  JSONB,
-    created_at   TIMESTAMP       NOT NULL DEFAULT NOW(),
-    updated_at   TIMESTAMP       NOT NULL DEFAULT NOW(),
+    id                 BIGSERIAL       PRIMARY KEY,
+    cookie_id          VARCHAR(36)     NOT NULL,
+    product_code       VARCHAR(50)     NOT NULL DEFAULT 'PERSONAL_COLOR_DIAGNOSIS',
+    status             VARCHAR(20)     NOT NULL DEFAULT 'PROCESSING',
+    result_json        JSONB,
+    -- 최초 분석 시 AI 리포트 모듈에서 받은 이미지를 ./report-images/ 에 저장하고
+    -- 파일명만 여기에 보관한다. 다음 조회부터는 다시 다운로드하지 않고 이 파일을 재사용.
+    report_image_path  VARCHAR(500),
+    -- 마지막 submit-photo 요청의 클라이언트 IP — 어드민에서 cookie↔ip 페어 차단할 때 사용
+    last_ip            VARCHAR(45),
+    created_at         TIMESTAMP       NOT NULL DEFAULT NOW(),
+    updated_at         TIMESTAMP       NOT NULL DEFAULT NOW(),
 
     CONSTRAINT uq_cookie_product UNIQUE (cookie_id, product_code),
     CONSTRAINT chk_status CHECK (status IN ('PROCESSING', 'COMPLETED', 'FAILED'))
@@ -93,3 +98,80 @@ CREATE TABLE user_behavior (
 CREATE TRIGGER trg_user_behavior_updated_at
     BEFORE UPDATE ON user_behavior
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+
+-- =========================================================================
+-- 차단 사용자 (밴 리스트)
+-- =========================================================================
+-- 악성 사용자 차단용. cookie_id 또는 ip_address 중 하나(또는 둘 다)로 매칭.
+-- 둘 다 NULL 허용, PK 없음 — 운영자가 수동으로 INSERT.
+-- 한 사용자에 대해 cookie와 ip를 각각의 행으로 넣어도 되고, 한 행에 둘 다 넣어도 됨.
+CREATE TABLE banned_user (
+    cookie_id   VARCHAR(36),
+    ip_address  VARCHAR(45),                -- IPv4(15) / IPv6(45) 둘 다 수용
+    reason      VARCHAR(200),
+    created_at  TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_banned_user_cookie_id  ON banned_user (cookie_id)  WHERE cookie_id  IS NOT NULL;
+CREATE INDEX idx_banned_user_ip_address ON banned_user (ip_address) WHERE ip_address IS NOT NULL;
+
+
+-- =========================================================================
+-- 일일 API 호출 한도 (리포트 생성 모듈 — 서버 전체 글로벌 카운터)
+-- =========================================================================
+-- /api/analysis/submit-photo 의 하루 호출 총합을 50회로 제한(쿠키 단위가 아님).
+-- 하루 1행만 만들어지며(quota_day PK), 자정 넘어가면 새 행이 생기고 이전 행은 그대로 남아 히스토리로 활용.
+CREATE TABLE api_call_quota (
+    quota_day   DATE      PRIMARY KEY,
+    call_count  INTEGER   NOT NULL DEFAULT 0,
+    updated_at  TIMESTAMP NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT chk_call_count_nonneg CHECK (call_count >= 0)
+);
+
+CREATE TRIGGER trg_api_call_quota_updated_at
+    BEFORE UPDATE ON api_call_quota
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+
+-- =========================================================================
+-- 사용자(쿠키) / IP 단위 일일 호출 카운터
+-- =========================================================================
+-- 글로벌 카운터(api_call_quota)와 별도로, 한 사용자가 쿠키를 새로 발급해
+-- 한도를 모두 소진하는 것을 막기 위한 2차 방어선.
+-- scope: 'COOKIE' / 'IP', actor_key: 쿠키 UUID 또는 IP 문자열.
+CREATE TABLE actor_quota (
+    scope       VARCHAR(10)  NOT NULL,
+    actor_key   VARCHAR(64)  NOT NULL,
+    quota_day   DATE         NOT NULL,
+    call_count  INTEGER      NOT NULL DEFAULT 0,
+    updated_at  TIMESTAMP    NOT NULL DEFAULT NOW(),
+
+    PRIMARY KEY (scope, actor_key, quota_day),
+    CONSTRAINT chk_actor_scope CHECK (scope IN ('COOKIE', 'IP')),
+    CONSTRAINT chk_actor_count_nonneg CHECK (call_count >= 0)
+);
+
+CREATE TRIGGER trg_actor_quota_updated_at
+    BEFORE UPDATE ON actor_quota
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+
+-- =========================================================================
+-- 결과 공유 토큰
+-- =========================================================================
+-- 본인 결과를 외부 사람에게 공유하기 위한 URL-safe 토큰.
+-- 한 사용자(쿠키)당 1건의 active 토큰을 재사용한다 — 다시 공유 버튼을 눌러도 같은 토큰.
+-- revoke 시 revoked_at 채워 비활성화 (행 삭제 안 함 — 같은 토큰 재사용 차단).
+CREATE TABLE share_token (
+    id                 BIGSERIAL    PRIMARY KEY,
+    token              VARCHAR(64)  NOT NULL UNIQUE,
+    cookie_id          VARCHAR(36)  NOT NULL,
+    analysis_result_id BIGINT       NOT NULL REFERENCES analysis_result(id) ON DELETE CASCADE,
+    created_at         TIMESTAMP    NOT NULL DEFAULT NOW(),
+    revoked_at         TIMESTAMP
+);
+
+CREATE INDEX idx_share_token_cookie_id ON share_token (cookie_id);
+CREATE INDEX idx_share_token_active ON share_token (cookie_id) WHERE revoked_at IS NULL;

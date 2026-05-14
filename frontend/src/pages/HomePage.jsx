@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import useReportCheck from '../hooks/useReportCheck.jsx'
 import { trackEvent } from '../analytics'
@@ -12,18 +11,6 @@ export default function HomePage() {
   }
   const { checkReport, dialog } = useReportCheck('home_tabbar')
 
-  // 결제 의향 / 만족도 / 행동 신호 (MVP 디버그 표시 — 운영에선 제거)
-  const [purchaseIntent, setPurchaseIntent] = useState(null)
-  const [satisfaction, setSatisfaction] = useState(null)
-  const [behavior, setBehavior] = useState(null)
-  useEffect(() => {
-    fetch('/api/purchase-intent').then(r => r.json()).then(setPurchaseIntent)
-      .catch(() => setPurchaseIntent({ exists: false, dialogCount: 0 }))
-    fetch('/api/survey/satisfaction').then(r => r.json()).then(setSatisfaction)
-      .catch(() => setSatisfaction({ exists: false }))
-    fetch('/api/user-behavior').then(r => r.json()).then(setBehavior)
-      .catch(() => setBehavior({ exists: false }))
-  }, [])
 
   return (
     <div className="hm-frame" data-screen-label="Home">
@@ -128,79 +115,6 @@ export default function HomePage() {
         </button>
         <p className="hm-cta-sub">결제 없이 먼저 무료 결과 확인 가능</p>
       </div>
-
-      {/* [디버그] 사용자 데이터 — MVP 검증용. 운영 전 제거 */}
-      <aside className="hm-debug">
-        <div className="hm-debug-h">[DEBUG] 결제 의향</div>
-        {purchaseIntent === null ? (
-          <div className="hm-debug-row">불러오는 중…</div>
-        ) : !purchaseIntent.exists ? (
-          <div className="hm-debug-row">아직 누르지 않음</div>
-        ) : (
-          <>
-            <div className="hm-debug-row">
-              <span>최종 선택</span>
-              <strong>{purchaseIntent.lastChoice === 'YES' ? '예' : '아니오'}</strong>
-            </div>
-            <div className="hm-debug-row">
-              <span>다이얼로그 노출 횟수</span>
-              <strong>{purchaseIntent.dialogCount}회</strong>
-            </div>
-          </>
-        )}
-
-        <div className="hm-debug-h">[DEBUG] 만족도 조사</div>
-        {satisfaction === null ? (
-          <div className="hm-debug-row">불러오는 중…</div>
-        ) : !satisfaction.exists ? (
-          <div className="hm-debug-row">아직 작성하지 않음</div>
-        ) : (
-          <>
-            <div className="hm-debug-row">
-              <span>별점</span>
-              <strong>{satisfaction.rating} / 5</strong>
-            </div>
-            <div className="hm-debug-row">
-              <span>성별</span>
-              <strong>{satisfaction.gender === 'MALE' ? '남자' : satisfaction.gender === 'FEMALE' ? '여자' : '-'}</strong>
-            </div>
-            <div className="hm-debug-row">
-              <span>의견</span>
-              <strong className="hm-debug-comment">{satisfaction.comment || '(없음)'}</strong>
-            </div>
-          </>
-        )}
-
-        <div className="hm-debug-h">[DEBUG] 행동 신호</div>
-        {behavior === null ? (
-          <div className="hm-debug-row">불러오는 중…</div>
-        ) : !behavior.exists ? (
-          <div className="hm-debug-row">아직 기록 없음</div>
-        ) : (
-          <>
-            <div className="hm-debug-row">
-              <span>최대 스크롤 도달</span>
-              <strong>{behavior.maxScrollSection ? `${behavior.maxScrollSection} (#${behavior.maxScrollIndex})` : '-'}</strong>
-            </div>
-            <div className="hm-debug-row">
-              <span>마지막 사진 망설임</span>
-              <strong>{behavior.lastPhotoDwellMs != null ? `${behavior.lastPhotoDwellMs} ms` : '-'}</strong>
-            </div>
-            <div className="hm-debug-row">
-              <span>누적 검증 실패</span>
-              <strong>{behavior.failedAttempts ?? 0}회</strong>
-            </div>
-            <div className="hm-debug-row">
-              <span>결과 페이지 진입</span>
-              <strong>{behavior.resultRevisitCount ?? 0}회</strong>
-            </div>
-            <div className="hm-debug-row">
-              <span>마지막 세션 사진 교체</span>
-              <strong>{behavior.lastPhotoReplaced ?? 0}회</strong>
-            </div>
-          </>
-        )}
-      </aside>
 
       <footer className="hm-footer">
         <a href="#">개인정보 처리방침</a>
