@@ -34,7 +34,7 @@ public class ShareToken {
     private String token;
 
     /** 공유 발행자 쿠키 — 한 사용자당 1건 active 토큰 (revoke 후엔 새로 생성) */
-    @Column(name = "cookie_id", nullable = false, length = 36)
+    @Column(name = "cookie_id", nullable = false, length = 100)
     private String cookieId;
 
     @Column(name = "analysis_result_id", nullable = false)

@@ -22,7 +22,7 @@ import java.time.LocalDateTime;
 public class PurchaseIntent {
 
     @Id
-    @Column(name = "cookie_id", length = 36)
+    @Column(name = "cookie_id", length = 100)
     private String cookieId;
 
     @Enumerated(EnumType.STRING)

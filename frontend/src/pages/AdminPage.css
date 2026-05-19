@@ -160,6 +160,48 @@
   color: #6a716b;
 }
 
+/* 유입 경로 분석 */
+.ap-section-sub {
+  margin: -8px 0 10px;
+  font-size: 12px;
+  color: #6a716b;
+}
+.ap-ref-tag {
+  display: inline-block;
+  background: #edf5ef;
+  color: #2a3f33;
+  border: 1px solid #c3d4c7;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 700;
+}
+.ap-rate-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ap-rate-bar-wrap {
+  width: 80px;
+  height: 6px;
+  background: #e8eddf;
+  border-radius: 3px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.ap-rate-bar-fill {
+  height: 100%;
+  background: #2a3f33;
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+.ap-rate-pct {
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  min-width: 38px;
+}
+
 /* LOGIN */
 .ap-login-wrap {
   display: flex;

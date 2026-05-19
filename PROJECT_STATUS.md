@@ -187,6 +187,31 @@ spring.servlet.multipart.max-request-size=60MB
 
 ## 6. 최근 적용한 수정 (이슈 트래킹)
 
+### 2026-05-19 — 유입 경로 추적 (UTM + ?ref=) + 어드민 대시보드 시각화
+
+| 항목 | 변경 |
+|---|---|
+| **목적** | 채널별 진단 전환율 측정. GA4 UTM 자동 집계 + 커스텀 ref 파라미터 → 어드민 대시보드 실시간 확인 |
+| **UTM** | `trackPageView`가 `page_location: window.location.href` 전송 → GA4가 UTM 파라미터를 세션 단위로 자동 어트리뷰션. 추가 코드 불필요 |
+| **ref 추적 (프론트)** | `analytics.js`에 `initRef()` / `getRef()` 추가. 앱 초기화 시 `?ref=` 값을 `sessionStorage(sf_ref)`에 저장. `main.jsx`의 전역 fetch 인터셉터가 `X-Ref` 헤더를 모든 API 요청에 자동 첨부. `trackEvent()`가 ref를 GA 이벤트에도 자동 첨부 |
+| **ref 추적 (백엔드)** | `AnonymousCookieFilter`가 신규 쿠키 발급 시 `X-Ref` 헤더를 읽어 `<uuid>_<ref>` 형태로 발급. 이후 모든 DB 테이블의 `cookie_id`가 유입 채널을 내포. ref 값은 `[a-z0-9_-]` 20자 이내로 자동 정제. `ref_param` 별도 컬럼 불필요 |
+| **스키마 변경** | 모든 테이블 `cookie_id VARCHAR(36)` → `VARCHAR(100)`. JPA 엔티티 6종 + `schema.sql` + `schema-postgres.sql` 일괄 수정 |
+| **어드민 대시보드** | `GET /api/admin/stats/acquisition` 신규 엔드포인트. `AdminStatsService.acquisitionBreakdown()`이 `cookie_id`의 `_` suffix로 ref를 추출해 집계. `AdminPage.jsx`에 "유입 경로 분석" 섹션 추가 |
+| **GA 이벤트** | 신규 이벤트 없음. 기존 모든 이벤트에 `ref` 파라미터 자동 추가(ref 없는 접속은 파라미터 생략) |
+
+### 2026-05-19 — 사용자 얼굴 이미지 저장
+
+| 항목 | 변경 |
+|---|---|
+| **목적** | 검증 통과한 사용자 업로드 얼굴 사진을 서버 디스크에 보관. AI 모델 학습 데이터 및 어드민 검토용 — 공개 URL 없음 |
+| **DDL** | `analysis_result` 테이블에 `face_image_path VARCHAR(500)` 컬럼 추가(NULL 허용 — 저장 실패 시에도 분석은 정상 완료) |
+| **저장 디렉토리** | `stylefit.face.storage-dir=./face-images` (application.properties). `report-images/`와 분리. 운영에선 영속 볼륨 경로로 교체 권장 |
+| **백엔드 흐름** | `AnalysisService.submitPhoto`: 사진 검증 통과 → Rate Limit 통과 → `saveFaceImage(file)` 호출 → UUID 파일명으로 `./face-images/`에 저장 → `entity.faceImagePath` 기록 → AI 분석 순서 |
+| **보안** | `report-images/`와 달리 정적 핸들러 미등록 — 디렉토리를 알아도 외부에서 GET 불가. UUID 파일명으로 추측 방지 |
+| **실패 처리** | `saveFaceImage()` IOException → `null` 반환 + 경고 로그. 분석 결과(COMPLETED)는 정상 저장되며 `face_image_path`만 NULL로 남음 |
+| **응답 DTO** | `AnalysisResponse`에 `faceImageSaved: Boolean` 추가. `true` = 저장 성공, `false` = 저장 실패 또는 기존 COMPLETED 재사용(이미 저장됨) |
+| **GA 이벤트** | `analysis_completed` 파라미터에 `face_image_saved` 추가 — 저장 성공률 모니터링. PII 없음(파일명·경로 비전송) |
+
 ### 2026-05-15 — 홈화면 디버그 박스 제거
 
 | 항목 | 변경 |
@@ -419,6 +444,8 @@ GA4를 통해 익명 사용자의 행동을 수집해 퍼널 이탈률·검증 �
 
 ### 7.3 커스텀 이벤트
 
+> **공통 파라미터**: `?ref=` 파라미터가 있는 접속에서는 모든 이벤트에 `ref` 값이 자동 첨부됨 (`analytics.js trackEvent` 레벨에서 주입). GA4 맞춤 측정기준으로 등록하면 ref별 퍼널 분석 가능.
+
 | 이벤트 | 파라미터 | 트리거 위치 | 알 수 있는 인사이트 |
 |---|---|---|---|
 | `cta_click` | `cta`, `location` | HomePage 히어로 CTA, 탭바 진단하기 | 어느 위치 CTA가 진단 전환에 더 기여하는가 |
@@ -427,7 +454,7 @@ GA4를 통해 익명 사용자의 행동을 수집해 퍼널 이탈률·검증 �
 | `analysis_submitted` | `resized_kb` | UploadPage `handleSubmit` 후 `/loading` 진입 | 진단 시도 수 (퍼널 핵심 지표) |
 | `analysis_reused` | `source` | UploadPage에서 기존 COMPLETED 발견 시 | "한 번 진단" 제약으로 캐시 결과 보는 횟수 (재방문 의도 지표) |
 | `photo_resize_failed` | — | UploadPage 캔버스 리사이즈 실패 | 브라우저/이미지 호환성 이슈 |
-| `analysis_completed` | `personal_color`, `main_type`, `elapsed_ms` | LoadingPage 백엔드 응답 성공 | 톤 카테고리 분포, 평균 분석 소요시간 |
+| `analysis_completed` | `personal_color`, `main_type`, `elapsed_ms`, `face_image_saved` | LoadingPage 백엔드 응답 성공 | 톤 카테고리 분포, 평균 분석 소요시간, 얼굴 이미지 저장 성공률 |
 | `analysis_failed` | `reason` (`validation_failed`/`in_progress_409`/`network`/`unknown`), `elapsed_ms`, `attempt_no` | LoadingPage 백엔드 응답 실패 | 백엔드 검증 실패 사유 분포, 누적 실패 횟수별 이탈 비교(2·3회차 좌절 시그널) |
 | `retry_clicked` | `reason`, `location` (`error_cta`/`error_tabbar`) | ErrorPage 재시도 CTA | 검증 실패 후 재시도율 — 이탈 vs 재도전 |
 | `result_view` | `personal_color`, `main_type` | ResultPage 최초 진입 (1회만) | 결과 페이지 진입 수 (실 완료자 수) |
@@ -493,7 +520,65 @@ GA4를 통해 익명 사용자의 행동을 수집해 퍼널 이탈률·검증 �
 
 ---
 
-## 8. 남은 작업
+## 8. 유입 경로 추적 운영 가이드
+
+### 8.1 링크 만드는 법
+
+공유할 URL 뒤에 `?ref=<채널명>`을 붙이면 된다.
+
+```
+https://stylefit.com/?ref=instagram
+https://stylefit.com/?ref=kakao-story
+https://stylefit.com/?ref=naver-blog
+https://stylefit.com/?ref=youtube
+https://stylefit.com/?ref=thread
+```
+
+**ref 값 규칙**
+- 영소문자 `a-z`, 숫자 `0-9`, 하이픈 `-`, 언더스코어 `_` 만 허용
+- 최대 20자 (초과 시 자동 절삭)
+- 대문자·한글·특수문자는 서버에서 자동 제거 → 남은 값이 없으면 ref 미기록 (direct 처리)
+
+### 8.2 데이터 수집 원리
+
+```
+사용자가 /?ref=instagram 으로 최초 접속
+        ↓
+브라우저 sessionStorage 에 sf_ref = "instagram" 저장
+        ↓
+첫 API 요청 (fetch 인터셉터) → X-Ref: instagram 헤더 자동 첨부
+        ↓
+AnonymousCookieFilter → 쿠키 없음 → <uuid>_instagram 발급 (HttpOnly, 30일)
+        ↓
+이후 모든 DB 저장 (analysis_result, satisfaction_survey, user_behavior 등)
+cookie_id = "<uuid>_instagram"
+```
+
+**중요: ref는 최초 1회만 기록된다**
+- 쿠키가 이미 존재하면 `?ref=` 값이나 `X-Ref` 헤더는 **완전히 무시**된다
+- 쿠키는 HttpOnly이므로 JS에서 읽거나 수정 불가 → 브라우저 쿠키 삭제 전까지 ref 변경 불가
+- 직접 접속(ref 없음) 후 쿠키가 발급된 사용자는 나중에 ref 링크를 눌러도 `direct`로 유지
+
+### 8.3 어드민 대시보드에서 확인하는 법
+
+1. `/admin` 접속 → 로그인
+2. **"유입 경로 분석"** 섹션 확인
+   - **유입 경로 (ref)**: 링크에 붙인 채널명. ref 없는 사용자는 `direct`
+   - **분석 제출**: 해당 채널에서 온 사용자 중 실제로 분석을 시도한 수
+   - **완료**: 검증 통과 후 결과를 받은 수
+   - **완료율**: 완료 / 제출 × 100
+
+### 8.4 ref 별 퍼널 분석 (GA4)
+
+`trackEvent`가 모든 이벤트에 `ref` 파라미터를 자동 첨부하므로 GA4에서도 채널별 분석이 가능하다.
+
+1. GA4 콘솔 → **맞춤 측정기준** → `ref` 등록 (이벤트 범위)
+2. **탐색** → 자유 형식 → 측정기준에 `ref`, 측정항목에 `이벤트 수` 추가
+3. `analysis_completed` 이벤트만 필터링하면 채널별 진단 완료 수 확인 가능
+
+---
+
+## 9. 남은 작업
 
 ### 백엔드
 - [ ] Python AI 분석 서버 연동 (`callAiAnalysis`, `callAiReportGenerator` 교체 + 임시 `Thread.sleep(15s)` 제거)
@@ -532,7 +617,7 @@ GA4를 통해 익명 사용자의 행동을 수집해 퍼널 이탈률·검증 �
 
 ---
 
-## 9. 디렉토리 트리 (요약)
+## 10. 디렉토리 트리 (요약)
 
 ```
 StyleFit/

@@ -20,6 +20,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -34,6 +35,9 @@ public class AnalysisService {
 
     @Value("${stylefit.report.storage-dir}")
     private String reportStorageDir;
+
+    @Value("${stylefit.face.storage-dir}")
+    private String faceStorageDir;
 
     /**
      * AI 모듈(같은 도메인 다른 포트) URL 화이트리스트. 콤마 구분.
@@ -145,16 +149,13 @@ public class AnalysisService {
             return AnalysisResponse.validationFailed(warnings);
         }
 
-        // 일일 호출 한도는 AI 모듈을 실제로 부르는 시점에만 소모.
-        // DB 캐시 재사용(위 COMPLETED 분기) / 사진 없음 / 검증 실패 / PROCESSING 충돌 케이스는 카운트 X.
+        // 이미지 바이트를 한 번만 읽어 saveFaceImage 에 전달.
+        // MultipartFile 스트림을 중복 소비하지 않기 위함.
+        byte[] imageBytes;
         try {
-            if (!rateLimitService.tryConsume(cookieId, clientIp)) {
-                throw new ResponseStatusException(
-                        HttpStatus.TOO_MANY_REQUESTS, "오늘 리포트 생성 한도에 도달했어요.");
-            }
-        } catch (RateLimitService.RateLimitExceededException e) {
-            throw new ResponseStatusException(
-                    HttpStatus.TOO_MANY_REQUESTS, "오늘 리포트 생성 한도에 도달했어요.");
+            imageBytes = file.getBytes();
+        } catch (IOException e) {
+            return AnalysisResponse.validationFailed(List.of("사진을 읽을 수 없습니다."));
         }
 
         AnalysisResult entity = existing.orElseGet(() -> AnalysisResult.of(cookieId));
@@ -164,23 +165,61 @@ public class AnalysisService {
         }
         repository.save(entity);
 
+        // 검증 통과한 얼굴 원본 이미지를 디스크에 저장. AI 학습·어드민 검토용.
+        String faceFilename = saveFaceImage(imageBytes, file.getContentType());
+        entity.setFaceImagePath(faceFilename);
+
         // AI 분석 모듈 호출 (mock)
         String resultJson = callAiAnalysis();
 
-        // 리포트 이미지 생성 모듈 호출 (mock) → 받은 URL을 다운로드해 디스크에 저장하고
-        // DB에는 파일명만 보관한다. 같은 사용자가 다시 진단 결과를 열 때 또 다운로드하지 않는다.
-        String generatedUrl = callAiReportGenerator(resultJson);
-        String storedFilename = downloadAndStoreReportImage(generatedUrl);
-
         entity.setStatus(AnalysisStatus.COMPLETED);
         entity.setResultJson(resultJson);
+        repository.save(entity);
+
+        return AnalysisResponse.completed(resultJson, null, null, faceFilename != null);
+    }
+
+    /**
+     * 사용자가 결제 확인("예")을 누른 시점에 호출.
+     * 이미 생성된 이미지가 있으면 캐시를 반환하고, 없으면 AI 모듈을 호출해 생성·저장 후 반환.
+     */
+    @Transactional
+    public Map<String, Object> generateReportImage(String cookieId, String clientIp) {
+        AnalysisResult entity = repository.findByCookieIdAndProductCode(cookieId, PRODUCT_CODE)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "분석 결과가 없습니다."));
+        if (entity.getStatus() != AnalysisStatus.COMPLETED) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "분석이 완료되지 않았습니다.");
+        }
+
+        // 이미 생성된 이미지가 있으면 카운터 소모 없이 캐시 반환
+        if (entity.getReportImagePath() != null) {
+            Map<String, Object> cached = new java.util.HashMap<>();
+            cached.put("reportImageUrl", REPORT_URL_PREFIX + entity.getReportImagePath());
+            cached.put("cached", true);
+            return cached;
+        }
+
+        // 일일 호출 한도는 AI 리포트 이미지를 실제로 생성하는 시점에만 소모
+        try {
+            if (!rateLimitService.tryConsume(cookieId, clientIp)) {
+                throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS, "오늘 리포트 생성 한도에 도달했어요.");
+            }
+        } catch (RateLimitService.RateLimitExceededException e) {
+            throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS, "오늘 리포트 생성 한도에 도달했어요.");
+        }
+
+        byte[] faceBytes = loadFaceImage(entity.getFaceImagePath());
+        String generatedUrl = callAiReportGenerator(entity.getResultJson(), faceBytes);
+        String storedFilename = downloadAndStoreReportImage(generatedUrl);
+
         entity.setReportImagePath(storedFilename);
         repository.save(entity);
 
-        String responseUrl = (storedFilename != null)
-                ? REPORT_URL_PREFIX + storedFilename
-                : generatedUrl;  // 저장 실패 시 원본 URL 로 폴백
-        return AnalysisResponse.completed(resultJson, responseUrl, false);
+        String responseUrl = (storedFilename != null) ? REPORT_URL_PREFIX + storedFilename : generatedUrl;
+        Map<String, Object> result = new java.util.HashMap<>();
+        result.put("reportImageUrl", responseUrl);
+        result.put("cached", false);
+        return result;
     }
 
     // -----------------------------------------------------------------------
@@ -207,9 +246,42 @@ public class AnalysisService {
         return MOCK_RESULT_JSON;
     }
 
-    private String callAiReportGenerator(String resultJson) {
+    private String callAiReportGenerator(String resultJson, byte[] imageBytes) {
         // TODO: Python AI 서버로 HTTP 요청 (RestClient)
+        // 전달 항목:
+        //   - resultJson  : callAiAnalysis() 결과 JSON (퍼스널컬러 타입·추천 색상·코디 등)
+        //   - imageBytes  : 검증 통과한 사용자 얼굴 원본 이미지 바이트
+        //     → 리포트 이미지 안에 사용자 사진을 합성하거나, 피부톤 재확인 등 후처리에 활용
         return MOCK_REPORT_IMAGE_URL;
+    }
+
+    /**
+     * 검증 통과한 사용자 업로드 이미지를 face-images 디렉토리에 저장하고 파일명만 반환한다.
+     * 실패 시 null — DB에 경로 없이 저장되고 분석 흐름엔 영향 없음.
+     */
+    private String saveFaceImage(byte[] imageBytes, String contentType) {
+        try {
+            String ext = pickExtension(contentType);
+            String filename = UUID.randomUUID() + "." + ext;
+            Path dir = Paths.get(faceStorageDir).toAbsolutePath();
+            Files.createDirectories(dir);
+            Files.write(dir.resolve(filename), imageBytes);
+            log.info("face image saved: {}", filename);
+            return filename;
+        } catch (IOException e) {
+            log.warn("face image save failed: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private byte[] loadFaceImage(String faceImagePath) {
+        if (faceImagePath == null) return new byte[0];
+        try {
+            return Files.readAllBytes(Paths.get(faceStorageDir).toAbsolutePath().resolve(faceImagePath));
+        } catch (IOException e) {
+            log.warn("face image load failed: {}", e.getMessage());
+            return new byte[0];
+        }
     }
 
     /**
@@ -300,8 +372,9 @@ public class AnalysisService {
         return switch (record.getStatus()) {
             case COMPLETED -> {
                 String stored = record.getReportImagePath();
-                String url = (stored != null) ? REPORT_URL_PREFIX + stored : MOCK_REPORT_IMAGE_URL;
-                yield AnalysisResponse.completed(record.getResultJson(), url, stored != null);
+                String url = (stored != null) ? REPORT_URL_PREFIX + stored : null;
+                Boolean cached = (stored != null) ? true : null;
+                yield AnalysisResponse.completed(record.getResultJson(), url, cached, record.getFaceImagePath() != null);
             }
             case PROCESSING -> AnalysisResponse.processing();
             case FAILED -> AnalysisResponse.photoRequired();

@@ -48,6 +48,8 @@ export default function ResultPage() {
   const [purchaseOpen, setPurchaseOpen] = useState(false)
   const [reportDownloading, setReportDownloading] = useState(false)
   const [hasViewedReport, setHasViewedReport] = useState(false)
+  const [reportImageUrl, setReportImageUrl] = useState(state?.reportImageUrl ?? null)
+  const [reportGenerating, setReportGenerating] = useState(false)
 
   // 공유 토큰
   const [shareToken, setShareToken] = useState(null)
@@ -66,9 +68,9 @@ export default function ResultPage() {
         if (res.status === 'COMPLETED') {
           setData({
             result: parseResult(res.result),
-            reportImageUrl: res.reportImageUrl,
             reportImageCached: res.reportImageCached,
           })
+          setReportImageUrl(res.reportImageUrl ?? null)
         } else {
           navigate('/upload', { replace: true })
         }
@@ -166,7 +168,24 @@ export default function ResultPage() {
     setHasViewedReport(true)
     try {
       await fetch('/api/purchase-intent/yes', { method: 'POST' })
-    } catch { /* 무시 — 다이얼로그는 stage 2로 진행 */ }
+    } catch {}
+    if (!reportImageUrl) {
+      setReportGenerating(true)
+      try {
+        const res = await fetch('/api/analysis/report-image', { method: 'POST' })
+        if (res.status === 429) {
+          trackEvent('rate_limit_blocked', { location: 'report_image' })
+          alert('오늘 리포트 생성 한도에 도달했어요. 내일 다시 시도해주세요.')
+        } else if (res.ok) {
+          const body = await res.json()
+          setReportImageUrl(body.reportImageUrl)
+          trackEvent('report_image_resolved', { source: body.cached ? 'cached' : 'generated' })
+        }
+      } catch {}
+      finally {
+        setReportGenerating(false)
+      }
+    }
   }
 
   const handlePurchaseClose = (stage) => {
@@ -177,7 +196,7 @@ export default function ResultPage() {
   }
 
   const handleReportDownload = async () => {
-    const url = data.reportImageUrl
+    const url = reportImageUrl
     if (!url || reportDownloading) return
     trackEvent('report_download_click', { location: 'purchase_dialog_stage2' })
     setReportDownloading(true)
@@ -298,21 +317,22 @@ export default function ResultPage() {
         <ShareDialog
           open={shareDialogOpen}
           shareUrl={`${window.location.origin}/share/${shareToken}`}
-          reportImageUrl={data.reportImageUrl}
+          reportImageUrl={reportImageUrl}
           personalColor={r.personalColor}
           onClose={() => setShareDialogOpen(false)}
         />
       )}
       <PurchaseIntentDialog
         open={purchaseOpen}
-        imageUrl={data.reportImageUrl}
+        imageUrl={reportImageUrl}
         onClose={handlePurchaseClose}
         onYes={handlePurchaseYes}
         onDownload={handleReportDownload}
         downloading={reportDownloading}
+        imageLoading={reportGenerating}
         surveyDone={surveyDone}
         onSurveyClick={handleSurvey}
-        skipPayment={!!data.reportImageCached || hasViewedReport}
+        skipPayment={!!reportImageUrl || hasViewedReport}
       />
       <header className="rp-topnav">
         <span />
@@ -472,7 +492,7 @@ export default function ResultPage() {
             <rect x="4" y="6" width="16" height="13" rx="2" stroke="currentColor" strokeWidth="1.8" />
             <line x1="4" y1="10" x2="20" y2="10" stroke="currentColor" strokeWidth="1.8" />
           </svg>
-          {data.reportImageCached ? '이미지 리포트 보기' : '1,990원으로 이미지 리포트 받아보기'}
+          {reportImageUrl ? '이미지 리포트 보기' : '1,990원으로 이미지 리포트 받아보기'}
         </button>
       </div>
 

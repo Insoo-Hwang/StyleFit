@@ -3,13 +3,16 @@
 
 CREATE TABLE analysis_result (
     id                 BIGSERIAL       PRIMARY KEY,
-    cookie_id          VARCHAR(36)     NOT NULL,
+    cookie_id          VARCHAR(100)    NOT NULL,
     product_code       VARCHAR(50)     NOT NULL DEFAULT 'PERSONAL_COLOR_DIAGNOSIS',
     status             VARCHAR(20)     NOT NULL DEFAULT 'PROCESSING',
     result_json        JSONB,
     -- 최초 분석 시 AI 리포트 모듈에서 받은 이미지를 ./report-images/ 에 저장하고
     -- 파일명만 여기에 보관한다. 다음 조회부터는 다시 다운로드하지 않고 이 파일을 재사용.
     report_image_path  VARCHAR(500),
+    -- 사용자가 업로드한 얼굴 원본 이미지를 ./face-images/ 에 저장하고 파일명만 보관.
+    -- AI 모델 학습 및 어드민 검토용. 공개 URL 없음(정적 핸들러 미등록).
+    face_image_path    VARCHAR(500),
     -- 마지막 submit-photo 요청의 클라이언트 IP — 어드민에서 cookie↔ip 페어 차단할 때 사용
     last_ip            VARCHAR(45),
     created_at         TIMESTAMP       NOT NULL DEFAULT NOW(),
@@ -41,7 +44,7 @@ CREATE INDEX idx_analysis_result_cookie_id ON analysis_result (cookie_id);
 -- =========================================================================
 -- 한 쿠키당 1건만 존재 (cookie_id가 PK). 재제출은 UPDATE.
 CREATE TABLE satisfaction_survey (
-    cookie_id  VARCHAR(36)  PRIMARY KEY,
+    cookie_id  VARCHAR(100) PRIMARY KEY,
     rating     SMALLINT     NOT NULL,
     gender     VARCHAR(10)  NOT NULL,
     comment    VARCHAR(300),
@@ -107,7 +110,7 @@ CREATE TRIGGER trg_user_behavior_updated_at
 -- 둘 다 NULL 허용, PK 없음 — 운영자가 수동으로 INSERT.
 -- 한 사용자에 대해 cookie와 ip를 각각의 행으로 넣어도 되고, 한 행에 둘 다 넣어도 됨.
 CREATE TABLE banned_user (
-    cookie_id   VARCHAR(36),
+    cookie_id   VARCHAR(100),
     ip_address  VARCHAR(45),                -- IPv4(15) / IPv6(45) 둘 다 수용
     reason      VARCHAR(200),
     created_at  TIMESTAMP NOT NULL DEFAULT NOW()
@@ -167,7 +170,7 @@ CREATE TRIGGER trg_actor_quota_updated_at
 CREATE TABLE share_token (
     id                 BIGSERIAL    PRIMARY KEY,
     token              VARCHAR(64)  NOT NULL UNIQUE,
-    cookie_id          VARCHAR(36)  NOT NULL,
+    cookie_id          VARCHAR(100) NOT NULL,
     analysis_result_id BIGINT       NOT NULL REFERENCES analysis_result(id) ON DELETE CASCADE,
     created_at         TIMESTAMP    NOT NULL DEFAULT NOW(),
     revoked_at         TIMESTAMP

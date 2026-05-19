@@ -91,6 +91,12 @@ public class AdminController {
         return ResponseEntity.ok(statsService.listShares());
     }
 
+    /** ?ref= 파라미터 기준 유입 경로 분석 (제출·완료·완료율). */
+    @GetMapping("/stats/acquisition")
+    public ResponseEntity<List<Map<String, Object>>> acquisition() {
+        return ResponseEntity.ok(statsService.acquisitionBreakdown());
+    }
+
     /** 최근 진단 활동 기준 사용자 목록 (cookie + lastIp 페어). 차단 화면 데이터 소스. */
     @GetMapping("/stats/recent-users")
     public ResponseEntity<List<Map<String, Object>>> recentUsers(

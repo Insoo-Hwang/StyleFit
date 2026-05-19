@@ -73,7 +73,7 @@ export default function LoadingPage() {
       }
       const data = await res.json()
       if (data.status === 'COMPLETED') {
-        return { kind: 'completed', result: data.result, reportImageUrl: data.reportImageUrl, reportImageCached: data.reportImageCached }
+        return { kind: 'completed', result: data.result, reportImageUrl: data.reportImageUrl, reportImageCached: data.reportImageCached, faceImageSaved: data.faceImageSaved }
       }
       if (data.status === 'VALIDATION_FAILED') {
         return { kind: 'error', reason: 'validation_failed', warnings: data.validationWarnings ?? [] }
@@ -84,7 +84,7 @@ export default function LoadingPage() {
     Promise.all([fetchPromise, minWait]).then(([result]) => {
       const elapsed_ms = Date.now() - startedAt
       if (result.kind === 'completed') {
-        trackEvent('analysis_completed', { ...extractTone(result.result), elapsed_ms })
+        trackEvent('analysis_completed', { ...extractTone(result.result), elapsed_ms, face_image_saved: result.faceImageSaved ?? false })
         navigate('/result', {
           replace: true,
           state: { result: result.result, reportImageUrl: result.reportImageUrl, reportImageCached: result.reportImageCached },

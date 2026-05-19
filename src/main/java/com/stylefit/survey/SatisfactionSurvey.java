@@ -22,7 +22,7 @@ import java.time.LocalDateTime;
 public class SatisfactionSurvey {
 
     @Id
-    @Column(name = "cookie_id", length = 36)
+    @Column(name = "cookie_id", length = 100)
     private String cookieId;
 
     @Column(nullable = false)

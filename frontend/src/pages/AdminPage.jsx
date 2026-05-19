@@ -172,6 +172,52 @@ const COLUMNS = {
   ],
 }
 
+function AcquisitionSection() {
+  const [rows, setRows] = useState(null)
+
+  useEffect(() => {
+    fetch('/api/admin/stats/acquisition')
+      .then((r) => r.ok ? r.json() : [])
+      .then(setRows)
+      .catch(() => setRows([]))
+  }, [])
+
+  if (rows === null) return <div className="ap-loading">집계 중...</div>
+  if (rows.length === 0) return <div className="ap-empty">데이터 없음<br/>?ref= 파라미터가 붙은 접속이 없어요</div>
+
+  return (
+    <div className="ap-table-wrap">
+      <table className="ap-table">
+        <thead>
+          <tr>
+            <th>유입 경로 (ref)</th>
+            <th>분석 제출</th>
+            <th>완료</th>
+            <th>완료율</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.ref}>
+              <td><span className="ap-ref-tag">{r.ref}</span></td>
+              <td>{r.total}</td>
+              <td>{r.completed}</td>
+              <td>
+                <div className="ap-rate-cell">
+                  <div className="ap-rate-bar-wrap">
+                    <div className="ap-rate-bar-fill" style={{ width: `${r.completionRate}%` }} />
+                  </div>
+                  <span className="ap-rate-pct">{r.completionRate}%</span>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 function Dashboard({ onLogout }) {
   const navigate = useNavigate()
   const [summary, setSummary] = useState(null)
@@ -210,6 +256,12 @@ function Dashboard({ onLogout }) {
       <section className="ap-section">
         <h2>요약</h2>
         <SummaryGrid data={summary} />
+      </section>
+
+      <section className="ap-section">
+        <h2>유입 경로 분석</h2>
+        <p className="ap-section-sub">?ref= 파라미터 기준. ref 없는 접속은 "direct"로 집계됩니다.</p>
+        <AcquisitionSection />
       </section>
 
       <section className="ap-section">

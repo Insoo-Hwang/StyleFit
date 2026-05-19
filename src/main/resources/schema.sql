@@ -3,7 +3,7 @@
 -- JPA 엔티티로 매핑되지 않은 PK-없는 테이블만 여기서 만든다.
 
 CREATE TABLE IF NOT EXISTS banned_user (
-    cookie_id   VARCHAR(36),
+    cookie_id   VARCHAR(100),
     ip_address  VARCHAR(45),
     reason      VARCHAR(200),
     created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP

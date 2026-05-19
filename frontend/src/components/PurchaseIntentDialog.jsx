@@ -10,9 +10,10 @@ export default function PurchaseIntentDialog({
   onYes,
   onDownload,
   downloading,
+  imageLoading = false,  // "예" 클릭 후 AI 이미지 생성 중
   surveyDone,     // null=미확인, false=미완료, true=완료
   onSurveyClick,  // 만족도 다이얼로그 열기 콜백
-  skipPayment = false,  // 이미지 DB 캐시 있으면 결제 단계 건너뜀
+  skipPayment = false,  // 이미지가 이미 있으면 결제 단계 건너뜀
 }) {
   const [stage, setStage] = useState(skipPayment ? 2 : 1)
 
@@ -74,7 +75,9 @@ export default function PurchaseIntentDialog({
             )}
 
             <div className="pid-image-wrap">
-              {imageUrl ? (
+              {imageLoading ? (
+                <div className="pid-image-loading">이미지 생성 중…</div>
+              ) : imageUrl ? (
                 <img src={imageUrl} alt="리포트 이미지" />
               ) : (
                 <div className="pid-image-fallback">리포트 이미지를 불러올 수 없습니다.</div>
@@ -89,7 +92,7 @@ export default function PurchaseIntentDialog({
                 type="button"
                 className="pid-btn primary"
                 onClick={() => onDownload?.()}
-                disabled={!imageUrl || downloading}
+                disabled={!imageUrl || imageLoading || downloading}
               >
                 <svg viewBox="0 0 24 24" fill="none" width="16" height="16" aria-hidden="true">
                   <path d="M12 4v11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />

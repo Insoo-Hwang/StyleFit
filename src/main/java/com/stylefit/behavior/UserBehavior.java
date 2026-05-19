@@ -20,7 +20,7 @@ import java.time.LocalDateTime;
 public class UserBehavior {
 
     @Id
-    @Column(name = "cookie_id", length = 36)
+    @Column(name = "cookie_id", length = 100)
     private String cookieId;
 
     @Column(name = "max_scroll_section", length = 30)

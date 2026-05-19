@@ -11,6 +11,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.Map;
+
 @RestController
 @RequestMapping("/api/analysis")
 @RequiredArgsConstructor
@@ -34,7 +36,7 @@ public class AnalysisController {
     /**
      * 사진을 업로드해 분석을 요청한다.
      * - VALIDATION_FAILED: 사진 검증 실패 (validationWarnings 포함)
-     * - COMPLETED:         분석 완료 (result, reportImageUrl 포함)
+     * - COMPLETED:         분석 완료 (result 포함, reportImageUrl 없음 — 결제 확인 후 별도 생성)
      * - 409 Conflict:      이미 처리 중
      * - 429 Too Many:      글로벌/쿠키/IP 일일 한도 초과
      */
@@ -45,5 +47,17 @@ public class AnalysisController {
         String cookieId = (String) request.getAttribute(AnonymousCookieFilter.REQUEST_ATTR);
         String clientIp = banService.extractClientIp(request);
         return ResponseEntity.ok(analysisService.submitPhoto(cookieId, clientIp, file));
+    }
+
+    /**
+     * 사용자가 결제 확인("예")을 누른 후 호출.
+     * 이미 생성된 이미지가 있으면 캐시 URL을 반환하고, 없으면 AI 모듈을 호출해 생성·저장 후 반환.
+     * 응답: { reportImageUrl: string, cached: boolean }
+     */
+    @PostMapping("/report-image")
+    public ResponseEntity<Map<String, Object>> generateReportImage(HttpServletRequest request) {
+        String cookieId = (String) request.getAttribute(AnonymousCookieFilter.REQUEST_ATTR);
+        String clientIp = banService.extractClientIp(request);
+        return ResponseEntity.ok(analysisService.generateReportImage(cookieId, clientIp));
     }
 }

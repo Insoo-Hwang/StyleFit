@@ -42,8 +42,12 @@ public class AnonymousCookieFilter extends OncePerRequestFilter {
                                     FilterChain filterChain) throws ServletException, IOException {
         String userId = extractCookie(request);
 
+        // 기존 쿠키가 있으면 ref 포함 여부와 상관없이 절대 재발급하지 않는다.
+        // ref 는 최초 발급 시 1회만 포함되며 이후 X-Ref 헤더가 와도 무시한다.
         if (userId == null) {
-            userId = UUID.randomUUID().toString();
+            String ref = sanitizeRef(request.getHeader("X-Ref"));
+            String base = UUID.randomUUID().toString();
+            userId = (ref != null) ? base + "_" + ref : base;
             boolean secure = resolveSecure(request);
             ResponseCookie cookie = ResponseCookie.from(COOKIE_NAME, userId)
                     .httpOnly(true)
@@ -64,6 +68,14 @@ public class AnonymousCookieFilter extends OncePerRequestFilter {
         // server.forward-headers-strategy=native 가 설정돼 있으면 isSecure() 가 XFP 를 반영함.
         return request.isSecure()
                 || "https".equalsIgnoreCase(request.getHeader("X-Forwarded-Proto"));
+    }
+
+    /** UUID에는 언더스코어가 없으므로 '_' 이후가 ref suffix. [a-z0-9_-] 20자 이내만 허용. */
+    private static String sanitizeRef(String raw) {
+        if (raw == null || raw.isBlank()) return null;
+        String s = raw.toLowerCase().replaceAll("[^a-z0-9_\\-]", "");
+        if (s.isEmpty()) return null;
+        return s.length() > 20 ? s.substring(0, 20) : s;
     }
 
     private String extractCookie(HttpServletRequest request) {

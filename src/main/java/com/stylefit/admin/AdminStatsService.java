@@ -292,6 +292,40 @@ public class AdminStatsService {
     }
 
     /**
+     * ?ref= 파라미터 기준 유입 경로 분석.
+     * ref 없는 진단은 "direct" 로 집계. 제출 수·완료 수·완료율을 반환.
+     */
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> acquisitionBreakdown() {
+        List<AnalysisResult> analyses = analysisResultRepository.findAll();
+
+        java.util.LinkedHashMap<String, long[]> byRef = new java.util.LinkedHashMap<>();
+        for (AnalysisResult a : analyses) {
+            String cookieId = a.getCookieId();
+            int sep = cookieId != null ? cookieId.indexOf('_') : -1;
+            String ref = sep > 0 ? cookieId.substring(sep + 1) : "direct";
+            byRef.computeIfAbsent(ref, k -> new long[2]);
+            byRef.get(ref)[0]++;
+            if (a.getStatus() == AnalysisStatus.COMPLETED) byRef.get(ref)[1]++;
+        }
+
+        return byRef.entrySet().stream()
+                .sorted((a, b) -> Long.compare(b.getValue()[0], a.getValue()[0]))
+                .map(e -> {
+                    long total = e.getValue()[0];
+                    long completed = e.getValue()[1];
+                    Map<String, Object> m = new HashMap<>();
+                    m.put("ref", e.getKey());
+                    m.put("total", total);
+                    m.put("completed", completed);
+                    m.put("completionRate", total == 0 ? 0.0
+                            : Math.round(completed * 10000.0 / total) / 100.0);
+                    return m;
+                })
+                .toList();
+    }
+
+    /**
      * 쿠키 ID 의 마지막 8자만 노출 — 원본 UUID 그대로 노출하면 어드민 누설 시 사용자 사칭 가능.
      */
     private static String maskCookie(String id) {

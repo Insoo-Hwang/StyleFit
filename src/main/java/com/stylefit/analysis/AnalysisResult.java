@@ -24,7 +24,7 @@ public class AnalysisResult {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "cookie_id", nullable = false, length = 36)
+    @Column(name = "cookie_id", nullable = false, length = 100)
     private String cookieId;
 
     @Column(name = "product_code", nullable = false, length = 50)
@@ -39,6 +39,10 @@ public class AnalysisResult {
 
     @Column(name = "report_image_path", length = 500)
     private String reportImagePath;
+
+    /** 사용자 업로드 얼굴 원본 이미지 파일명 (./face-images/ 기준). AI 학습·어드민 검토용. */
+    @Column(name = "face_image_path", length = 500)
+    private String faceImagePath;
 
     /** 마지막 submit-photo 요청의 클라이언트 IP — 어드민 차단 화면에서 cookie↔ip 페어 매칭용 */
     @Column(name = "last_ip", length = 45)

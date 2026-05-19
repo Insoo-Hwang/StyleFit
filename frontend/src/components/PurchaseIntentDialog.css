@@ -99,6 +99,24 @@
   font-size: 13px;
   color: var(--ink-soft);
 }
+.pid-image-loading {
+  padding: 40px 12px;
+  font-size: 13px;
+  color: var(--ink-soft);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+.pid-image-loading::before {
+  content: '';
+  width: 28px; height: 28px;
+  border: 2.5px solid var(--green-mid);
+  border-top-color: var(--green-deep);
+  border-radius: 50%;
+  animation: pid-spin 0.8s linear infinite;
+}
+@keyframes pid-spin { to { transform: rotate(360deg); } }
 
 .pid-actions {
   display: grid; grid-template-columns: 1fr 1.2fr; gap: 10px;
