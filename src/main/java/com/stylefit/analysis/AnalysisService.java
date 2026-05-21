@@ -1,5 +1,7 @@
 package com.stylefit.analysis;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.stylefit.ratelimit.RateLimitService;
 import com.stylefit.vision.PhotoValidationResponse;
 import com.stylefit.vision.PhotoValidationService;
@@ -12,17 +14,19 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
 import java.net.URI;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.UUID;
+import java.util.*;
 
 @Slf4j
 @Service
@@ -32,6 +36,7 @@ public class AnalysisService {
     private final AnalysisResultRepository repository;
     private final PhotoValidationService photoValidationService;
     private final RateLimitService rateLimitService;
+    private final ObjectMapper objectMapper;
 
     @Value("${stylefit.report.storage-dir}")
     private String reportStorageDir;
@@ -39,9 +44,11 @@ public class AnalysisService {
     @Value("${stylefit.face.storage-dir}")
     private String faceStorageDir;
 
+    @Value("${stylefit.ai.base-url:http://168.107.32.164:8000}")
+    private String aiBaseUrl;
+
     /**
      * AI 모듈(같은 도메인 다른 포트) URL 화이트리스트. 콤마 구분.
-     * 예: "localhost:5000,localhost:5001"
      * 비어 있으면(dev) 호스트 검증 skip — 운영에선 반드시 설정해 SSRF 차단.
      */
     @Value("${stylefit.security.ai-allowed-hosts:}")
@@ -49,66 +56,65 @@ public class AnalysisService {
 
     private static final String PRODUCT_CODE = "PERSONAL_COLOR_DIAGNOSIS";
     private static final String REPORT_URL_PREFIX = "/report-images/";
-
-    // -----------------------------------------------------------------------
-    // Mock 데이터 — Python AI 서버 연동 시 교체
-    // -----------------------------------------------------------------------
-    private static final long MOCK_AI_DELAY_MS = 15_000L;
-
-    private static final String MOCK_RESULT_JSON = """
-            {
-              "personalColor": "쿨톤 · 윈터 계열",
-              "tagline": "딥 · 클리어 무드",
-              "heroLede": "차분하고 선명한 컬러가 얼굴 윤곽을 또렷하게 만들어줄 가능성이 높습니다.",
-              "mainType": "윈터",
-              "mainPercent": 80,
-              "secondaryType": "섬머",
-              "secondaryPercent": 20,
-              "bestColors": [
-                {"hex": "#3a3f44", "name": "차콜 그레이", "use": "상의 · 아우터 전반"},
-                {"hex": "#1b2a4a", "name": "딥 네이비", "use": "셔츠 · 데님"},
-                {"hex": "#1f3d2e", "name": "딥 그린", "use": "맨투맨 · 후드"}
-              ],
-              "worstColors": [
-                {"hex": "#f7c7d6", "name": "밝은 파스텔 핑크", "reason": "얼굴이 창백해 보일 수 있음"},
-                {"hex": "#c8e34a", "name": "형광 라임", "reason": "피부톤과 충돌"},
-                {"hex": "#f1d960", "name": "밝은 옐로우", "reason": "피부 노란기 강조"}
-              ],
-              "clothing": {
-                "top": ["차콜 니트", "네이비 옥스포드 셔츠", "딥그린 맨투맨", "블랙 미니멀 자켓"],
-                "bottom": ["인디고 데님", "차콜 슬랙스", "네이비 치노 팬츠", "블랙 조거 팬츠"]
-              },
-              "hair": {
-                "title": "투블럭 · 슬릭백",
-                "description": "선명하고 깔끔한 실루엣이 잘 맞습니다.",
-                "colorNote": "컬러: 내추럴 블랙 또는 다크 브라운 권장"
-              },
-              "accessories": "실버 시계 · 블랙 프레임 안경 · 실버 · 건메탈 목걸이",
-              "situations": [
-                {"name": "출근룩", "outfit": "차콜 슬랙스 + 네이비 셔츠 + 블랙 더비슈즈", "description": "깔끔하고 신뢰감 있는 인상. 실버 시계 포인트 추천."},
-                {"name": "데이트룩", "outfit": "딥그린 니트 + 인디고 데님 + 화이트 스니커즈", "description": "편안하면서 정돈된 분위기. 가벼운 무드의 데이트룩."},
-                {"name": "데일리룩", "outfit": "블랙 후드 + 차콜 조거 + 블랙 캡", "description": "편안한 데일리 무드. 미니멀하지만 톤이 잘 맞는 조합."}
-              ],
-              "shopKeywords": [
-                "차콜 니트 남성", "네이비 옥스포드 셔츠", "딥그린 맨투맨", "블랙 미니멀 자켓",
-                "인디고 슬림 데님", "실버 메탈 시계", "블랙 더비슈즈 남성", "투블럭 헤어 왁스",
-                "건메탈 목걸이 남성", "차콜 울 코트"
-              ],
-              "avoidRules": [
-                "밝은 파스텔 단색 상하의 세트는 피하세요",
-                "형광기 있는 색은 포인트 아이템으로도 피하세요",
-                "흰 셔츠 + 밝은 베이지 팬츠 조합은 칙칙해 보일 수 있습니다"
-              ]
-            }
-            """;
-
     private static final String MOCK_REPORT_IMAGE_URL =
             "https://placehold.co/800x1200/1f3d2e/e7d8a8?text=STYLE+Report";
+
+    // 컬러 카테고리명 → hex 코드 조회 테이블 (AI 응답에 hex 없음 → 근사값 사용)
+    private static final Map<String, String> COLOR_HEX_MAP;
+    static {
+        Map<String, String> m = new LinkedHashMap<>();
+        // 쿨톤 계열
+        m.put("딥 네이비", "#1b2a4a");
+        m.put("다크 네이비", "#0d1b3e");
+        m.put("네이비", "#1f3864");
+        m.put("차콜 그레이", "#3a3f44");
+        m.put("차콜", "#3a3f44");
+        m.put("다크 그레이", "#424242");
+        m.put("그레이", "#757575");
+        m.put("라이트 그레이", "#e0e0e0");
+        m.put("블랙", "#1a1a1a");
+        m.put("화이트", "#f5f5f5");
+        m.put("아이보리", "#fffff0");
+        m.put("딥 그린", "#1f3d2e");
+        m.put("다크 그린", "#1b5e20");
+        m.put("그린", "#388e3c");
+        m.put("올리브 그린", "#558b2f");
+        m.put("올리브", "#708238");
+        m.put("버건디", "#7b1831");
+        m.put("와인", "#722f37");
+        m.put("다크 레드", "#b71c1c");
+        m.put("레드", "#c62828");
+        m.put("블루", "#1565c0");
+        m.put("스카이 블루", "#4fc3f7");
+        m.put("라이트 블루", "#64b5f6");
+        m.put("퍼플", "#7b1fa2");
+        m.put("라벤더", "#ce93d8");
+        m.put("플럼", "#6a1b4d");
+        // 웜톤 계열
+        m.put("베이지", "#d4c5a9");
+        m.put("카멜", "#c19a6b");
+        m.put("카키", "#6b6b3a");
+        m.put("브라운", "#795548");
+        m.put("다크 브라운", "#4e342e");
+        m.put("테라코타", "#c0713b");
+        m.put("오렌지", "#e65100");
+        m.put("코랄", "#f08080");
+        m.put("살몬", "#fa8072");
+        m.put("옐로우", "#f9a825");
+        m.put("골드", "#ffc107");
+        m.put("머스타드", "#f4c20d");
+        m.put("핑크", "#f48fb1");
+        m.put("로즈", "#e91e63");
+        m.put("파스텔 핑크", "#f7c7d6");
+        m.put("밝은 파스텔 핑크", "#f7c7d6");
+        m.put("형광 라임", "#c8e34a");
+        m.put("밝은 옐로우", "#f1d960");
+        m.put("연두", "#8bc34a");
+        COLOR_HEX_MAP = Collections.unmodifiableMap(m);
+    }
+
     // -----------------------------------------------------------------------
 
-    /**
-     * 기존 분석 결과 여부를 확인해 다음 단계를 안내한다.
-     */
     public AnalysisResponse start(String cookieId) {
         return repository.findByCookieIdAndProductCode(cookieId, PRODUCT_CODE)
                 .map(this::toResponse)
@@ -118,10 +124,9 @@ public class AnalysisService {
     /**
      * 사진을 검증하고 AI 분석을 수행한 뒤 결과를 DB에 저장한다.
      *
-     * NOTE: 현재 PROCESSING 저장과 COMPLETED 저장이 같은 트랜잭션 안에 있어
+     * NOTE: PROCESSING 저장과 COMPLETED 저장이 같은 트랜잭션 안에 있어
      *       PROCESSING 상태가 실제로 DB에 커밋되지 않는다.
-     *       Python AI 서버 연동 시 두 단계를 별도 트랜잭션으로 분리해야 한다.
-     *       (saveProcessing → [트랜잭션 종료] → AI 호출 → saveCompleted)
+     *       AI 서버 호출 시간이 길어지면 별도 트랜잭션으로 분리 고려.
      */
     @Transactional
     public AnalysisResponse submitPhoto(String cookieId, String clientIp, MultipartFile file) {
@@ -149,8 +154,7 @@ public class AnalysisService {
             return AnalysisResponse.validationFailed(warnings);
         }
 
-        // 이미지 바이트를 한 번만 읽어 saveFaceImage 에 전달.
-        // MultipartFile 스트림을 중복 소비하지 않기 위함.
+        // 이미지 바이트를 한 번만 읽어 AI 호출과 saveFaceImage 에 전달
         byte[] imageBytes;
         try {
             imageBytes = file.getBytes();
@@ -169,8 +173,14 @@ public class AnalysisService {
         String faceFilename = saveFaceImage(imageBytes, file.getContentType());
         entity.setFaceImagePath(faceFilename);
 
-        // AI 분석 모듈 호출 (mock)
-        String resultJson = callAiAnalysis();
+        // AI 분석 모듈 호출 — null 반환 시 AI가 이미지를 처리할 수 없음(422)
+        String resultJson = callAiAnalysis(imageBytes, file.getContentType());
+        if (resultJson == null) {
+            entity.setStatus(AnalysisStatus.FAILED);
+            repository.save(entity);
+            return AnalysisResponse.validationFailed(
+                    List.of("AI 모듈이 이미지를 분석하지 못했습니다. 더 선명한 정면 사진으로 다시 시도해주세요."));
+        }
 
         entity.setStatus(AnalysisStatus.COMPLETED);
         entity.setResultJson(resultJson);
@@ -223,6 +233,248 @@ public class AnalysisService {
     }
 
     // -----------------------------------------------------------------------
+    // AI 모듈 호출
+    // -----------------------------------------------------------------------
+
+    /**
+     * POST http://{aiBaseUrl}/personal-color/analyze 에 이미지를 전송하고
+     * 퍼스널컬러 분석 결과를 프론트엔드 형식 JSON 문자열로 반환한다.
+     *
+     * @return 매핑된 JSON 문자열, 또는 null (AI 422 — 이미지 처리 불가)
+     * @throws ResponseStatusException (500) AI 서버 오류 또는 네트워크 장애 시
+     */
+    private String callAiAnalysis(byte[] imageBytes, String contentType) {
+        String ext    = pickExtension(contentType);
+        String partCT = (contentType != null && !contentType.isBlank()) ? contentType : "application/octet-stream";
+        String boundary = "----FormBoundary" + UUID.randomUUID().toString().replace("-", "");
+
+        byte[] multipartBody;
+        try {
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            baos.write(("--" + boundary + "\r\n").getBytes(StandardCharsets.ISO_8859_1));
+            baos.write(("Content-Disposition: form-data; name=\"image\"; filename=\"image." + ext + "\"\r\n")
+                    .getBytes(StandardCharsets.ISO_8859_1));
+            baos.write(("Content-Type: " + partCT + "\r\n").getBytes(StandardCharsets.ISO_8859_1));
+            baos.write("\r\n".getBytes(StandardCharsets.ISO_8859_1));
+            baos.write(imageBytes);
+            baos.write("\r\n".getBytes(StandardCharsets.ISO_8859_1));
+            baos.write(("--" + boundary + "--\r\n").getBytes(StandardCharsets.ISO_8859_1));
+            multipartBody = baos.toByteArray();
+        } catch (IOException e) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "multipart 빌드 오류");
+        }
+
+        // 실제로 보내는 파트 헤더를 찍어 디버깅
+        log.info("AI call — partCT={}, imageBytes={}, partHeader=[{}]",
+                partCT, imageBytes.length,
+                new String(Arrays.copyOf(multipartBody, Math.min(250, multipartBody.length)),
+                        StandardCharsets.ISO_8859_1).replace("\r\n", "\\r\\n"));
+
+        String rawJson;
+        try {
+            URL url = new URL(aiBaseUrl + "/personal-color/analyze");
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setDoOutput(true);
+            conn.setRequestMethod("POST");
+            conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=" + boundary);
+            conn.setRequestProperty("Content-Length", String.valueOf(multipartBody.length));
+            conn.setConnectTimeout(10_000);
+            conn.setReadTimeout(60_000);
+
+            try (OutputStream out = conn.getOutputStream()) {
+                out.write(multipartBody);
+            }
+
+            int status = conn.getResponseCode();
+            if (status == 422) {
+                InputStream err = conn.getErrorStream();
+                String body = err != null ? new String(err.readAllBytes(), StandardCharsets.UTF_8) : "";
+                log.warn("AI module 422 — image not processable: {}", body);
+                return null;
+            }
+            if (status >= 400) {
+                InputStream err = conn.getErrorStream();
+                String body = err != null ? new String(err.readAllBytes(), StandardCharsets.UTF_8) : "";
+                log.error("AI module error {}: {}", status, body);
+                throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "AI 분석 중 오류가 발생했습니다.");
+            }
+
+            rawJson = new String(conn.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+
+        } catch (ResponseStatusException e) {
+            throw e;
+        } catch (IOException e) {
+            log.error("AI module call failed: {}", e.getMessage());
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "AI 서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.");
+        }
+
+        try {
+            return mapAiResponse(rawJson);
+        } catch (Exception e) {
+            log.error("AI response mapping failed: {} | raw={}", e.getMessage(), rawJson);
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "AI 응답 처리 중 오류가 발생했습니다.");
+        }
+    }
+
+    private String callAiReportGenerator(String resultJson, byte[] imageBytes) {
+        // TODO: Python AI 서버로 HTTP 요청 (RestClient)
+        return MOCK_REPORT_IMAGE_URL;
+    }
+
+    // -----------------------------------------------------------------------
+    // AI 응답 → 프론트엔드 JSON 매핑
+    // -----------------------------------------------------------------------
+
+    /**
+     * AI 모듈 응답(report 구조)을 ResultPage 가 소비하는 레거시 JSON 형식으로 변환한다.
+     *
+     * AI 응답 구조:
+     *   report.personal_color.{type, reason, attributes, season_scores}
+     *   report.recommended_colors.{categories[], reason}
+     *   report.avoid_colors.{categories[], reason}
+     *   report.color_rules[]
+     *   report.recommended_tops[{item, color, fit, reason}]
+     *   report.avoid_tops[{item, color, fit, reason}]
+     *
+     * 매핑 결과 구조 (프론트 기대값):
+     *   personalColor, tagline, heroLede,
+     *   mainType, mainPercent, secondaryType, secondaryPercent,
+     *   bestColors[{hex, name, use}], worstColors[{hex, name, reason}],
+     *   clothing.{top[], bottom[]}, avoidRules[]
+     */
+    private String mapAiResponse(String rawJson) throws Exception {
+        JsonNode report = objectMapper.readTree(rawJson).path("report");
+        JsonNode pc = report.path("personal_color");
+
+        String type = pc.path("type").asText("");
+        String reason = pc.path("reason").asText("");
+
+        JsonNode attrs = pc.path("attributes");
+        String temperature = attrs.path("temperature").path("value").asText("");
+        String clarity = attrs.path("clarity").path("value").asText("");
+
+        // season_scores → 비율 내림차순 정렬
+        List<JsonNode> scores = new ArrayList<>();
+        pc.path("season_scores").forEach(scores::add);
+        scores.sort((a, b) -> b.path("percent").asInt() - a.path("percent").asInt());
+
+        String mainType     = scores.isEmpty()  ? null : nullIfBlank(scores.get(0).path("season").asText(null));
+        int    mainPercent  = scores.isEmpty()  ? 0    : scores.get(0).path("percent").asInt();
+        String secType      = scores.size() < 2 ? null : nullIfBlank(scores.get(1).path("season").asText(null));
+        int    secPercent   = scores.size() < 2 ? 0    : scores.get(1).path("percent").asInt();
+
+        // bestColors
+        JsonNode recColors = report.path("recommended_colors");
+        String   recReason = recColors.path("reason").asText("");
+        List<Map<String, Object>> bestColors = new ArrayList<>();
+        for (JsonNode cat : recColors.path("categories")) {
+            String name = cat.asText();
+            if (name.isBlank()) continue;
+            Map<String, Object> c = new LinkedHashMap<>();
+            c.put("hex", lookupHex(name));
+            c.put("name", name);
+            c.put("use", truncate(recReason, 25));
+            bestColors.add(c);
+        }
+
+        // worstColors
+        JsonNode avoidColors = report.path("avoid_colors");
+        String   avoidReason = avoidColors.path("reason").asText("");
+        List<Map<String, Object>> worstColors = new ArrayList<>();
+        for (JsonNode cat : avoidColors.path("categories")) {
+            String name = cat.asText();
+            if (name.isBlank()) continue;
+            Map<String, Object> c = new LinkedHashMap<>();
+            c.put("hex", lookupHex(name));
+            c.put("name", name);
+            c.put("reason", truncate(avoidReason, 25));
+            worstColors.add(c);
+        }
+
+        // clothing.top from recommended_tops
+        List<String> topList = new ArrayList<>();
+        for (JsonNode top : report.path("recommended_tops")) {
+            String item  = top.path("item").asText("").trim();
+            String color = top.path("color").asText("").trim();
+            String fit   = top.path("fit").asText("").trim();
+            if (item.isBlank()) continue;
+            if (color.isBlank() && fit.isBlank()) {
+                topList.add(item);
+            } else {
+                StringBuilder sb = new StringBuilder(item).append(" (");
+                if (!color.isBlank()) sb.append(color);
+                if (!color.isBlank() && !fit.isBlank()) sb.append(", ");
+                if (!fit.isBlank()) sb.append(fit);
+                sb.append(")");
+                topList.add(sb.toString());
+            }
+        }
+
+        // avoidRules: color_rules 먼저, 이후 avoid_tops 설명 추가
+        List<String> avoidRules = new ArrayList<>();
+        for (JsonNode rule : report.path("color_rules")) {
+            String r = rule.asText().trim();
+            if (!r.isBlank()) avoidRules.add(r);
+        }
+        for (JsonNode top : report.path("avoid_tops")) {
+            String item      = top.path("item").asText("").trim();
+            String topReason = top.path("reason").asText("").trim();
+            if (item.isBlank()) continue;
+            avoidRules.add(topReason.isBlank()
+                    ? item + "은(는) 피하세요"
+                    : item + " — " + topReason);
+        }
+
+        // 결과 맵 조립
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("personalColor", type);
+        result.put("tagline", buildTagline(temperature, clarity));
+        result.put("heroLede", reason);
+        result.put("mainType", mainType);
+        result.put("mainPercent", mainPercent);
+        if (secType != null) {
+            result.put("secondaryType", secType);
+            result.put("secondaryPercent", secPercent);
+        }
+        result.put("bestColors", bestColors);
+        result.put("worstColors", worstColors);
+        result.put("clothing", Map.of("top", topList));
+        result.put("avoidRules", avoidRules);
+
+        return objectMapper.writeValueAsString(result);
+    }
+
+    private String buildTagline(String temperature, String clarity) {
+        List<String> parts = new ArrayList<>();
+        if (temperature != null && !temperature.isBlank()) parts.add(temperature);
+        if (clarity     != null && !clarity.isBlank())     parts.add(clarity);
+        return parts.isEmpty() ? "" : String.join(" · ", parts) + " 무드";
+    }
+
+    private String truncate(String s, int maxLen) {
+        if (s == null || s.isBlank()) return "";
+        return s.length() > maxLen ? s.substring(0, maxLen) + "…" : s;
+    }
+
+    private String nullIfBlank(String s) {
+        return (s == null || s.isBlank()) ? null : s;
+    }
+
+    /** 컬러 이름으로 hex 코드를 조회한다. 정확한 일치 → 부분 일치 → fallback #888888 */
+    private String lookupHex(String colorName) {
+        if (colorName == null || colorName.isBlank()) return "#888888";
+        String trimmed = colorName.trim();
+        String hit = COLOR_HEX_MAP.get(trimmed);
+        if (hit != null) return hit;
+        for (Map.Entry<String, String> entry : COLOR_HEX_MAP.entrySet()) {
+            if (trimmed.contains(entry.getKey()) || entry.getKey().contains(trimmed)) {
+                return entry.getValue();
+            }
+        }
+        return "#888888";
+    }
+
+    // -----------------------------------------------------------------------
     // Private helpers
     // -----------------------------------------------------------------------
 
@@ -233,26 +485,6 @@ public class AnalysisService {
         } catch (IOException e) {
             return List.of("사진을 읽을 수 없습니다.");
         }
-    }
-
-    private String callAiAnalysis() {
-        // TODO: Python AI 서버로 HTTP 요청 (RestClient)
-        // 실제 AI 처리 시간을 흉내내기 위해 잠깐 대기 — 프론트 로딩 UX 검증용
-        try {
-            Thread.sleep(MOCK_AI_DELAY_MS);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-        return MOCK_RESULT_JSON;
-    }
-
-    private String callAiReportGenerator(String resultJson, byte[] imageBytes) {
-        // TODO: Python AI 서버로 HTTP 요청 (RestClient)
-        // 전달 항목:
-        //   - resultJson  : callAiAnalysis() 결과 JSON (퍼스널컬러 타입·추천 색상·코디 등)
-        //   - imageBytes  : 검증 통과한 사용자 얼굴 원본 이미지 바이트
-        //     → 리포트 이미지 안에 사용자 사진을 합성하거나, 피부톤 재확인 등 후처리에 활용
-        return MOCK_REPORT_IMAGE_URL;
     }
 
     /**
@@ -291,9 +523,7 @@ public class AnalysisService {
      * SSRF 방어:
      * - http/https 스킴만 허용
      * - host:port 가 stylefit.security.ai-allowed-hosts 화이트리스트에 있어야 함
-     * - HttpURLConnection.setInstanceFollowRedirects(false) 로 redirect 차단
-     *   (redirect 응답은 실패로 처리해 우회 차단)
-     * 화이트리스트가 비어 있으면(dev) 호스트 검증 없음.
+     * - redirect 차단
      */
     private String downloadAndStoreReportImage(String sourceUrl) {
         try {
@@ -342,7 +572,6 @@ public class AnalysisService {
         if (!scheme.equalsIgnoreCase("http") && !scheme.equalsIgnoreCase("https")) return false;
         if (uri.getHost() == null || uri.getHost().isBlank()) return false;
         if (aiAllowedHosts == null || aiAllowedHosts.isBlank()) {
-            // dev 모드 — 화이트리스트 미설정이면 호스트 검증 skip (운영에선 반드시 설정)
             return true;
         }
         String hostPort = uri.getPort() < 0
@@ -360,11 +589,11 @@ public class AnalysisService {
     private static String pickExtension(String contentType) {
         if (contentType == null) return "img";
         String ct = contentType.toLowerCase();
-        if (ct.contains("png")) return "png";
+        if (ct.contains("png"))  return "png";
         if (ct.contains("jpeg") || ct.contains("jpg")) return "jpg";
-        if (ct.contains("svg")) return "svg";
+        if (ct.contains("svg"))  return "svg";
         if (ct.contains("webp")) return "webp";
-        if (ct.contains("gif")) return "gif";
+        if (ct.contains("gif"))  return "gif";
         return "img";
     }
 
@@ -377,7 +606,7 @@ public class AnalysisService {
                 yield AnalysisResponse.completed(record.getResultJson(), url, cached, record.getFaceImagePath() != null);
             }
             case PROCESSING -> AnalysisResponse.processing();
-            case FAILED -> AnalysisResponse.photoRequired();
+            case FAILED     -> AnalysisResponse.photoRequired();
         };
     }
 }

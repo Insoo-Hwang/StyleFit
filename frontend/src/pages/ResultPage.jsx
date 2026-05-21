@@ -150,7 +150,6 @@ export default function ResultPage() {
   const best = r.bestColors ?? []
   const worst = r.worstColors ?? []
   const top = r.clothing?.top ?? []
-  const bottom = r.clothing?.bottom ?? []
   const rules = r.avoidRules ?? []
 
   const handlePurchaseOpen = async () => {
@@ -417,17 +416,13 @@ export default function ResultPage() {
       )}
 
       {/* N°04 CLOTH */}
-      {(top.length > 0 || bottom.length > 0) && (
+      {top.length > 0 && (
         <>
           <div className="rp-shead" data-rp-section="clothing" data-rp-index="4"><span className="rp-ix">N°04</span><h2>의류 추천</h2></div>
           <div className="rp-cloth-grid">
             <div className="rp-cloth-card">
               <h3>상의 추천</h3>
               <ul>{top.map((t, i) => <li key={i}>{t}</li>)}</ul>
-            </div>
-            <div className="rp-cloth-card">
-              <h3>하의 추천</h3>
-              <ul>{bottom.map((t, i) => <li key={i}>{t}</li>)}</ul>
             </div>
           </div>
         </>

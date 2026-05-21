@@ -48,10 +48,9 @@ export default function LoadingPage() {
       return
     }
 
-    // 단계 진행 타이머: 5s, 10s 시점에 active 단계 진행
+    // 단계 진행 타이머: 5s, 10s 시점에 active 단계 진행 (시각적 연출용)
     const t1 = setTimeout(() => setActiveStep(1), STEP_MS)
     const t2 = setTimeout(() => setActiveStep(2), STEP_MS * 2)
-    const minWait = new Promise(resolve => setTimeout(resolve, STEP_MS * STEPS.length))
 
     const formData = new FormData()
     formData.append('file', file)
@@ -81,7 +80,7 @@ export default function LoadingPage() {
       return { kind: 'error', reason: 'unknown', warnings: ['분석 중 오류가 발생했습니다.'] }
     }).catch(() => ({ kind: 'error', reason: 'network', warnings: ['서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.'] }))
 
-    Promise.all([fetchPromise, minWait]).then(([result]) => {
+    fetchPromise.then((result) => {
       const elapsed_ms = Date.now() - startedAt
       if (result.kind === 'completed') {
         trackEvent('analysis_completed', { ...extractTone(result.result), elapsed_ms, face_image_saved: result.faceImageSaved ?? false })

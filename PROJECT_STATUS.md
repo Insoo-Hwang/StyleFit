@@ -112,16 +112,21 @@ com.stylefit
          │    ├─ YuNet 얼굴 탐지 (싱글톤 detector, synchronized)
          │    └─ 밝기 계산
          ├─ 검증 통과 시 status=PROCESSING 저장
-         ├─ callAiAnalysis()         ← 현재 mock
+         ├─ callAiAnalysis()         ← AI 모듈 HTTP 호출 (http://168.107.32.164:8000)
          ├─ callAiReportGenerator()  ← 현재 mock
          └─ status=COMPLETED 저장 + 응답 반환
 ```
 
 ### 현재 mock인 부분
-- `callAiAnalysis()` → 고정 JSON (쿨톤 · 윈터 계열, bestColors/worstColors 3개씩, clothing.top/bottom, hair, accessories, situations, shopKeywords, avoidRules 포함)
-- 의도적인 `Thread.sleep(15_000)` 추가 — 프론트 LoadingPage 3단계 진행 UX 검증용 (Python 연동 시 제거)
-- `callAiReportGenerator()` → `placehold.co` URL
-- 추후 Python AI 서버 HTTP 호출로 교체 예정 (`AnalysisService.java` 주석 참고)
+- `callAiReportGenerator()` → `placehold.co` URL (리포트 이미지 생성 AI 연동 미완료)
+
+### AI 모듈 연동 (callAiAnalysis)
+- **엔드포인트**: `POST http://168.107.32.164:8000/personal-color/analyze`
+- **요청**: `multipart/form-data`, 필드명 `image`
+- **응답 매핑**: AI 응답(`report.personal_color`, `recommended_colors`, `avoid_colors`, `color_rules`, `recommended_tops`, `avoid_tops`)을 프론트 기대 포맷(`personalColor`, `bestColors`, `worstColors`, `clothing.top`, `avoidRules` 등)으로 변환
+- **컬러 hex**: AI가 색상명만 반환하므로 `AnalysisService` 내 40개 한국어 컬러명 → hex 조회 테이블 사용 (미등록 색상은 `#888888` fallback)
+- **422 처리**: AI가 이미지를 처리 못하면 `VALIDATION_FAILED` 응답 + 엔티티 `FAILED` 저장 (사용자 재시도 가능)
+- **설정값**: `stylefit.ai.base-url=http://168.107.32.164:8000` (application.properties)
 
 ---
 
@@ -186,6 +191,18 @@ spring.servlet.multipart.max-request-size=60MB
 ---
 
 ## 6. 최근 적용한 수정 (이슈 트래킹)
+
+### 2026-05-21 — AI 모듈 실 연동 (퍼스널컬러 분석)
+
+| 항목 | 변경 |
+|---|---|
+| **목적** | mock 데이터 + 15초 강제 대기 → Python AI 서버(`168.107.32.164:8000`) 실 호출로 교체 |
+| **백엔드** | `AnalysisService.callAiAnalysis()`: `Thread.sleep` 및 고정 JSON 제거. `RestClient`로 `POST /personal-color/analyze` multipart 호출. 응답 JSON을 프론트 기대 포맷으로 변환(`mapAiResponse()`) |
+| **응답 매핑** | `personal_color.type` → `personalColor`, `season_scores` 내림차순 → `mainType/mainPercent/secondaryType/secondaryPercent`, `recommended_colors.categories` → `bestColors`, `avoid_colors.categories` → `worstColors`, `recommended_tops` → `clothing.top`, `color_rules + avoid_tops` → `avoidRules` |
+| **컬러 hex** | AI 응답에 hex 없음 → 40개 한국어 컬러명 조회 테이블 + 부분 일치 + `#888888` fallback |
+| **에러 처리** | AI 422 → `null` 반환 → 엔티티 `FAILED` 저장 + `VALIDATION_FAILED` 응답(재시도 가능). 5xx/네트워크 오류 → `500` throw → `@Transactional` 롤백(재시도 가능) |
+| **설정 추가** | `application.properties`에 `stylefit.ai.base-url=http://168.107.32.164:8000` 추가 |
+| **프론트** | `LoadingPage.jsx`: `Promise.all([fetchPromise, minWait])` → `fetchPromise.then()` 로 변경 — 최소 15초 대기 제거, AI 응답 즉시 결과 페이지로 이동. 단계 진행 타이머(5s, 10s)는 시각 연출용으로 유지 |
 
 ### 2026-05-19 — 유입 경로 추적 (UTM + ?ref=) + 어드민 대시보드 시각화
 
