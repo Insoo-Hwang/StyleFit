@@ -192,6 +192,31 @@ spring.servlet.multipart.max-request-size=60MB
 
 ## 6. 최근 적용한 수정 (이슈 트래킹)
 
+### 2026-05-25 — 어드민 분석 집계 변경 + 리포트 퍼널 추가
+
+| 항목 | 변경 |
+|---|---|
+| **목적** | 사용자당 1회 기준 집계 + 기본리포트 / 이미지까지 본 / 하다만 비율 분리 |
+| **집계 방식 변경 (백엔드)** | `total/completed/processing/failed` → `uniqueUsers/abandoned/completedBasicOnly/completedWithImage`. `(cookie_id, product_code)` unique constraint 덕분에 `analyses.size()` = unique 사용자 수 보장. `abandoned` = FAILED + PROCESSING 합산 |
+| **리포트 퍼널 계산 (백엔드)** | `completedBasicOnly` = COMPLETED && `reportImagePath` IS NULL (결과 화면만 봄). `completedWithImage` = COMPLETED && `reportImagePath` IS NOT NULL (이미지까지 요청). `todayCompleted`는 유지 |
+| **StatCard 업데이트 (프론트)** | "총 진단 (전체)" → "총 진단 사용자". sub text: 미완료 / 기본리포트 / 이미지 카운트 표시 |
+| **퍼널 섹션 추가 (프론트)** | `FunnelSection` 컴포넌트 신규. 3행(하다만·기본리포트·이미지) 각각 비율 바(빨강/주황/초록) + 퍼센트 표시. 요약 ~ 유입경로 섹션 사이에 배치 |
+
+### 2026-05-25 — HEIC 지원 + 사진 경로 기반 AI 호출 + 실패 시 자동 삭제
+
+| 항목 | 변경 |
+|---|---|
+| **목적** | ① iPhone HEIC 포맷 수용 ② 서버에 먼저 저장 후 AI에 파일 경로 전달 ③ AI 실패 시 저장된 사진 자동 삭제 |
+| **HEIC 지원 (프론트)** | `heic2any` 라이브러리 추가(`npm install heic2any`). `resizeImage()`에서 HEIC/HEIF 파일 감지 시 동적 import로 PNG Blob 변환 후 canvas 처리. 미사용 사용자에게는 번들 크기 영향 없음(lazy import 코드 스플릿) |
+| **JPEG 85% 출력 유지 (프론트)** | `canvas.toBlob('image/jpeg', 0.85)` 유지. PNG 출력은 동일 해상도에서 3-10배 용량 증가 문제로 채택하지 않음. HEIC → JPEG 변환 시에도 `heic2any`에 `toType:'image/jpeg', quality:0.85` 적용 |
+| **accept 확장 (프론트)** | `<input accept>`에 `image/heic, image/heif, .heic, .heif` 추가. 클라이언트 타입 검증(`ACCEPTED_TYPES`, `ACCEPTED_EXT`)도 동일하게 확장. 경고 문구 / 메타 라벨도 HEIC 언급 추가 |
+| **저장 우선 후 경로 전달 (백엔드)** | 기존: `saveFaceImage` 후 `callAiAnalysis(imageBytes)` — AI에 파일 바이트를 직접 전송. 변경: `saveFaceImage` 후 저장된 파일의 절대 경로(`Path`)를 `callAiAnalysis(imagePath)`에 전달. AI 서버(Spring Boot와 동일 머신)가 파일을 경로로 읽도록 multipart 필드명 `image` → `image_path`(text/plain) 로 변경. **AI 서버 측 API도 `image_path` 필드를 읽도록 업데이트 필요** |
+| **저장 실패 처리 강화 (백엔드)** | 기존: `saveFaceImage` 반환값이 null이어도 AI 호출 계속. 변경: null이면 즉시 `VALIDATION_FAILED` 반환 — AI 서버가 접근할 파일이 없으므로 진행 불가 |
+| **AI 실패 시 파일 삭제 (백엔드)** | 기존: AI 422/실패 시 저장된 얼굴 이미지가 디스크에 잔류. 변경: `resultJson == null` 분기에서 `deleteFaceImage(faceFilename)` 호출 → `Files.deleteIfExists` 로 즉시 삭제. 삭제 성공/실패 모두 로그 기록, 분석 FAILED 기록에는 영향 없음 |
+| **DB 저장 순서 변경 (백엔드)** | 기존: AI 호출 전에 `entity.setFaceImagePath(faceFilename)` → AI 실패해도 경로가 DB에 남음. 변경: AI 성공 확인 후 `entity.setFaceImagePath(faceFilename)` 설정 → 경로는 항상 실제 파일이 존재할 때만 DB에 기록됨 |
+| **`deleteFaceImage` 신규 메서드 (백엔드)** | `AnalysisService`에 추가. `Files.deleteIfExists(path)` — 없는 파일에도 예외 없이 처리. IOException은 warn 로그만 남기고 삭제 실패가 FAILED 저장을 막지 않음 |
+| **불필요 import 정리 (백엔드)** | `java.util.*` wildcard → 개별 import 명시. `Arrays` 클래스 사용 제거(디버그 로그 제거로 불필요해짐) |
+
 ### 2026-05-21 — AI 모듈 실 연동 (퍼스널컬러 분석)
 
 | 항목 | 변경 |

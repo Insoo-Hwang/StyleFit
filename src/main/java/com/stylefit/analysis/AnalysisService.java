@@ -26,7 +26,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
 
 @Slf4j
 @Service
@@ -154,12 +160,18 @@ public class AnalysisService {
             return AnalysisResponse.validationFailed(warnings);
         }
 
-        // 이미지 바이트를 한 번만 읽어 AI 호출과 saveFaceImage 에 전달
+        // 이미지 바이트를 한 번만 읽는다
         byte[] imageBytes;
         try {
             imageBytes = file.getBytes();
         } catch (IOException e) {
             return AnalysisResponse.validationFailed(List.of("사진을 읽을 수 없습니다."));
+        }
+
+        // 검증 통과한 이미지를 먼저 디스크에 저장한다. AI 서버에 파일 경로를 전달하기 위함.
+        String faceFilename = saveFaceImage(imageBytes, file.getContentType());
+        if (faceFilename == null) {
+            return AnalysisResponse.validationFailed(List.of("사진을 저장하는 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."));
         }
 
         AnalysisResult entity = existing.orElseGet(() -> AnalysisResult.of(cookieId));
@@ -169,24 +181,26 @@ public class AnalysisService {
         }
         repository.save(entity);
 
-        // 검증 통과한 얼굴 원본 이미지를 디스크에 저장. AI 학습·어드민 검토용.
-        String faceFilename = saveFaceImage(imageBytes, file.getContentType());
-        entity.setFaceImagePath(faceFilename);
+        // 저장된 파일의 절대 경로를 AI 서버로 전달
+        Path imagePath = Paths.get(faceStorageDir).toAbsolutePath().resolve(faceFilename);
+        String resultJson = callAiAnalysis(imagePath);
 
-        // AI 분석 모듈 호출 — null 반환 시 AI가 이미지를 처리할 수 없음(422)
-        String resultJson = callAiAnalysis(imageBytes, file.getContentType());
         if (resultJson == null) {
+            // AI 분석 실패 — 저장한 사진 삭제 후 FAILED 기록
+            deleteFaceImage(faceFilename);
             entity.setStatus(AnalysisStatus.FAILED);
             repository.save(entity);
             return AnalysisResponse.validationFailed(
                     List.of("AI 모듈이 이미지를 분석하지 못했습니다. 더 선명한 정면 사진으로 다시 시도해주세요."));
         }
 
+        // AI 분석 성공 — 경로를 DB에 저장
+        entity.setFaceImagePath(faceFilename);
         entity.setStatus(AnalysisStatus.COMPLETED);
         entity.setResultJson(resultJson);
         repository.save(entity);
 
-        return AnalysisResponse.completed(resultJson, null, null, faceFilename != null);
+        return AnalysisResponse.completed(resultJson, null, null, true);
     }
 
     /**
@@ -237,26 +251,27 @@ public class AnalysisService {
     // -----------------------------------------------------------------------
 
     /**
-     * POST http://{aiBaseUrl}/personal-color/analyze 에 이미지를 전송하고
-     * 퍼스널컬러 분석 결과를 프론트엔드 형식 JSON 문자열로 반환한다.
+     * 디스크에 저장된 이미지 파일의 절대 경로를 AI 서버로 전달해 퍼스널컬러 분석 결과를 받는다.
+     * AI 서버와 Spring Boot 서버가 같은 머신에 있어 파일 시스템을 공유한다고 가정한다.
+     *
+     * 전송 형식: multipart/form-data, 필드명 "image_path" (text/plain) = 절대 경로 문자열
      *
      * @return 매핑된 JSON 문자열, 또는 null (AI 422 — 이미지 처리 불가)
      * @throws ResponseStatusException (500) AI 서버 오류 또는 네트워크 장애 시
      */
-    private String callAiAnalysis(byte[] imageBytes, String contentType) {
-        String ext    = pickExtension(contentType);
-        String partCT = (contentType != null && !contentType.isBlank()) ? contentType : "application/octet-stream";
+    private String callAiAnalysis(Path imageFile) {
+        String imagePath = imageFile.toAbsolutePath().toString();
         String boundary = "----FormBoundary" + UUID.randomUUID().toString().replace("-", "");
 
         byte[] multipartBody;
         try {
+            byte[] pathBytes = imagePath.getBytes(StandardCharsets.UTF_8);
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             baos.write(("--" + boundary + "\r\n").getBytes(StandardCharsets.ISO_8859_1));
-            baos.write(("Content-Disposition: form-data; name=\"image\"; filename=\"image." + ext + "\"\r\n")
-                    .getBytes(StandardCharsets.ISO_8859_1));
-            baos.write(("Content-Type: " + partCT + "\r\n").getBytes(StandardCharsets.ISO_8859_1));
+            baos.write(("Content-Disposition: form-data; name=\"image_path\"\r\n").getBytes(StandardCharsets.ISO_8859_1));
+            baos.write(("Content-Type: text/plain; charset=utf-8\r\n").getBytes(StandardCharsets.ISO_8859_1));
             baos.write("\r\n".getBytes(StandardCharsets.ISO_8859_1));
-            baos.write(imageBytes);
+            baos.write(pathBytes);
             baos.write("\r\n".getBytes(StandardCharsets.ISO_8859_1));
             baos.write(("--" + boundary + "--\r\n").getBytes(StandardCharsets.ISO_8859_1));
             multipartBody = baos.toByteArray();
@@ -264,11 +279,7 @@ public class AnalysisService {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "multipart 빌드 오류");
         }
 
-        // 실제로 보내는 파트 헤더를 찍어 디버깅
-        log.info("AI call — partCT={}, imageBytes={}, partHeader=[{}]",
-                partCT, imageBytes.length,
-                new String(Arrays.copyOf(multipartBody, Math.min(250, multipartBody.length)),
-                        StandardCharsets.ISO_8859_1).replace("\r\n", "\\r\\n"));
+        log.info("AI call — image_path={}", imagePath);
 
         String rawJson;
         try {
@@ -503,6 +514,22 @@ public class AnalysisService {
         } catch (IOException e) {
             log.warn("face image save failed: {}", e.getMessage());
             return null;
+        }
+    }
+
+    /**
+     * AI 분석 실패 시 저장해뒀던 얼굴 이미지를 삭제한다.
+     * 파일이 없거나 삭제에 실패해도 분석 흐름 자체는 영향받지 않는다.
+     */
+    private void deleteFaceImage(String filename) {
+        if (filename == null) return;
+        try {
+            Path path = Paths.get(faceStorageDir).toAbsolutePath().resolve(filename);
+            boolean deleted = Files.deleteIfExists(path);
+            if (deleted) log.info("face image deleted (AI failed): {}", filename);
+            else log.warn("face image not found for deletion: {}", filename);
+        } catch (IOException e) {
+            log.warn("face image delete failed: {}", e.getMessage());
         }
     }
 

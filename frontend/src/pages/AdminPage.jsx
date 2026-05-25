@@ -78,6 +78,47 @@ function StatCard({ title, value, sub }) {
   )
 }
 
+function FunnelSection({ data }) {
+  if (!data) return <div className="ap-loading">집계 중...</div>
+  const a = data.analysis || {}
+  const total = a.uniqueUsers || 0
+
+  const rows = [
+    { label: '하다만 (미완료)', count: a.abandoned ?? 0, color: '#c0392b' },
+    { label: '기본 리포트만 봄', count: a.completedBasicOnly ?? 0, color: '#d4820a' },
+    { label: '리포트 이미지까지 봄', count: a.completedWithImage ?? 0, color: '#2a8f4a' },
+  ]
+
+  return (
+    <div className="ap-table-wrap">
+      <table className="ap-table">
+        <thead>
+          <tr><th>단계</th><th>사용자 수</th><th>비율</th></tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => {
+            const pct = total === 0 ? 0 : Math.round(r.count * 1000 / total) / 10
+            return (
+              <tr key={r.label}>
+                <td>{r.label}</td>
+                <td>{r.count}명</td>
+                <td>
+                  <div className="ap-rate-cell">
+                    <div className="ap-rate-bar-wrap">
+                      <div className="ap-rate-bar-fill" style={{ width: `${pct}%`, background: r.color }} />
+                    </div>
+                    <span className="ap-rate-pct">{pct}%</span>
+                  </div>
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 function SummaryGrid({ data }) {
   if (!data) return <div className="ap-loading">집계 중...</div>
   const a = data.analysis || {}
@@ -89,8 +130,8 @@ function SummaryGrid({ data }) {
   const q = data.quota || {}
   return (
     <div className="ap-summary">
-      <StatCard title="총 진단 (전체)" value={a.total ?? 0}
-        sub={`완료 ${a.completed ?? 0} / 처리중 ${a.processing ?? 0} / 실패 ${a.failed ?? 0}`} />
+      <StatCard title="총 진단 사용자" value={a.uniqueUsers ?? 0}
+        sub={`미완료 ${a.abandoned ?? 0} / 기본리포트 ${a.completedBasicOnly ?? 0} / 이미지 ${a.completedWithImage ?? 0}`} />
       <StatCard title="오늘 완료 진단" value={a.todayCompleted ?? 0} />
       <StatCard title="만족도 평균" value={s.avgRating?.toFixed?.(2) ?? '0'}
         sub={`총 ${s.count ?? 0}건 (남 ${s.male ?? 0} / 여 ${s.female ?? 0}, 코멘트 ${s.withComment ?? 0})`} />
@@ -256,6 +297,12 @@ function Dashboard({ onLogout }) {
       <section className="ap-section">
         <h2>요약</h2>
         <SummaryGrid data={summary} />
+      </section>
+
+      <section className="ap-section">
+        <h2>리포트 열람 퍼널</h2>
+        <p className="ap-section-sub">사용자당 1회 기준. 미완료 = 실패·진행중 합산.</p>
+        <FunnelSection data={summary} />
       </section>
 
       <section className="ap-section">

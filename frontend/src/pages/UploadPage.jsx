@@ -6,11 +6,23 @@ import './UploadPage.css'
 
 const MAX_DIM = 1280
 const MAX_BYTES = 10 * 1024 * 1024            // 10MB
-const ACCEPTED_TYPES = ['image/jpeg', 'image/png']
-const ACCEPTED_EXT = /\.(jpe?g|png)$/i
+const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/heic', 'image/heif']
+const ACCEPTED_EXT = /\.(jpe?g|png|heic|heif)$/i
 
 async function resizeImage(file) {
-  const url = URL.createObjectURL(file)
+  let sourceFile = file
+
+  // HEIC/HEIF(iPhone 자체 포맷) → JPEG 변환 (Chrome/Firefox는 HEIC 디코딩 불가)
+  const isHeic = file.type === 'image/heic' || file.type === 'image/heif'
+    || /\.(heic|heif)$/i.test(file.name)
+  if (isHeic) {
+    const { default: heic2any } = await import('heic2any')
+    const converted = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.85 })
+    const resultBlob = Array.isArray(converted) ? converted[0] : converted
+    sourceFile = new File([resultBlob], file.name.replace(/\.(heic|heif)$/i, '.jpg'), { type: 'image/jpeg' })
+  }
+
+  const url = URL.createObjectURL(sourceFile)
   try {
     const img = await new Promise((resolve, reject) => {
       const i = new Image()
@@ -31,7 +43,8 @@ async function resizeImage(file) {
     const blob = await new Promise((resolve, reject) => {
       canvas.toBlob(b => b ? resolve(b) : reject(new Error('canvas.toBlob 실패')), 'image/jpeg', 0.85)
     })
-    return new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' })
+    const baseName = sourceFile.name.replace(/\.[^.]+$/, '')
+    return new File([blob], baseName + '.jpg', { type: 'image/jpeg' })
   } finally {
     URL.revokeObjectURL(url)
   }
@@ -90,7 +103,7 @@ export default function UploadPage() {
     const typeOk = ACCEPTED_TYPES.includes(incoming.type) || ACCEPTED_EXT.test(incoming.name)
     if (!typeOk) {
       trackEvent('photo_rejected_client', { reason: 'mime_or_ext', file_type: incoming.type || 'unknown' })
-      setWarning('JPG 또는 PNG 형식의 사진만 업로드할 수 있어요.')
+      setWarning('JPG, PNG, HEIC 형식의 사진만 업로드할 수 있어요.')
       return
     }
     if (incoming.size > MAX_BYTES) {
@@ -252,11 +265,11 @@ export default function UploadPage() {
           ref={fileInputRef}
           className="up-file-input"
           type="file"
-          accept="image/jpeg,image/png,.jpg,.jpeg,.png"
+          accept="image/jpeg,image/png,image/heic,image/heif,.jpg,.jpeg,.png,.heic,.heif"
           onChange={(e) => { addFiles(e.target.files); e.target.value = '' }}
         />
       </label>
-      <div className="up-meta-row">JPG · PNG · 최대 10MB</div>
+      <div className="up-meta-row">JPG · PNG · HEIC · 최대 10MB</div>
       {warning && <div className="up-warn-row">⚠ {warning}</div>}
 
       <aside className="up-priv">

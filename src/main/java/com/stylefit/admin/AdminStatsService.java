@@ -47,20 +47,27 @@ public class AdminStatsService {
         Map<String, Object> out = new HashMap<>();
 
         List<AnalysisResult> analyses = analysisResultRepository.findAll();
-        long total = analyses.size();
-        long completed = analyses.stream().filter(a -> a.getStatus() == AnalysisStatus.COMPLETED).count();
-        long processing = analyses.stream().filter(a -> a.getStatus() == AnalysisStatus.PROCESSING).count();
-        long failed = analyses.stream().filter(a -> a.getStatus() == AnalysisStatus.FAILED).count();
+        // unique constraint on (cookie_id, product_code) → 사용자 1명 = 행 1개
+        long uniqueUsers = analyses.size();
+        long abandoned = analyses.stream()
+                .filter(a -> a.getStatus() != AnalysisStatus.COMPLETED)
+                .count(); // FAILED + PROCESSING
+        long completedWithImage = analyses.stream()
+                .filter(a -> a.getStatus() == AnalysisStatus.COMPLETED && a.getReportImagePath() != null)
+                .count();
+        long completedBasicOnly = analyses.stream()
+                .filter(a -> a.getStatus() == AnalysisStatus.COMPLETED && a.getReportImagePath() == null)
+                .count();
         LocalDateTime startOfToday = LocalDate.now().atStartOfDay();
         long todayCompleted = analyses.stream()
                 .filter(a -> a.getStatus() == AnalysisStatus.COMPLETED)
                 .filter(a -> a.getUpdatedAt() != null && a.getUpdatedAt().isAfter(startOfToday))
                 .count();
         out.put("analysis", Map.of(
-                "total", total,
-                "completed", completed,
-                "processing", processing,
-                "failed", failed,
+                "uniqueUsers", uniqueUsers,
+                "abandoned", abandoned,
+                "completedBasicOnly", completedBasicOnly,
+                "completedWithImage", completedWithImage,
                 "todayCompleted", todayCompleted
         ));
 
