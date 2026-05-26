@@ -56,6 +56,7 @@ export default function UploadPage() {
   const [isDrag, setIsDrag] = useState(false)
   const [warning, setWarning] = useState('')
   const [banned, setBanned] = useState(false)
+  const [gender, setGender] = useState(null) // 'male' | 'female' | 'unisex'
   const fileInputRef = useRef(null)
   const { checkReport, dialog } = useReportCheck('upload_tabbar')
 
@@ -159,15 +160,15 @@ export default function UploadPage() {
 
     try {
       const resized = await resizeImage(photo.file)
-      trackEvent('analysis_submitted', { resized_kb: Math.round(resized.size / 1024) })
-      navigate('/loading', { state: { file: resized } })
+      trackEvent('analysis_submitted', { resized_kb: Math.round(resized.size / 1024), gender: gender ?? 'unisex' })
+      navigate('/loading', { state: { file: resized, gender: gender ?? 'unisex' } })
     } catch {
       trackEvent('photo_resize_failed')
       navigate('/error', { state: { warnings: ['이미지 처리 중 문제가 발생했습니다. 다른 사진으로 시도해주세요.'] } })
     }
   }
 
-  const canSubmit = !!photo && !banned
+  const canSubmit = !!photo && !banned && !!gender
 
   if (banned) {
     return (
@@ -223,6 +224,22 @@ export default function UploadPage() {
         <div className="up-step"><span className="up-dot">2</span>AI 분석</div>
         <span className="up-line" />
         <div className="up-step"><span className="up-dot">3</span>결과 확인</div>
+      </div>
+
+      <div className="up-gender">
+        <span className="up-gender-label">성별</span>
+        <div className="up-gender-btns">
+          {[['male', '남'], ['female', '녀'], ['unisex', '미선택']].map(([v, label]) => (
+            <button
+              key={v}
+              type="button"
+              className={`up-gender-btn${gender === v ? ' active' : ''}`}
+              onClick={() => setGender(v)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <label

@@ -14,28 +14,24 @@ function parseResult(raw) {
   return raw
 }
 
+function toSurveyGender(g) {
+  if (g === 'male') return 'MALE'
+  if (g === 'female') return 'FEMALE'
+  return null
+}
+
 function formatToday() {
   const d = new Date()
   const pad = (n) => String(n).padStart(2, '0')
   return `${d.getFullYear()}.${pad(d.getMonth() + 1)}.${pad(d.getDate())}`
 }
 
-function ComingSoonCard() {
-  return (
-    <div className="rp-soon">
-      <div className="rp-soon-pattern" aria-hidden="true" />
-      <span className="rp-soon-pill">
-        <span className="rp-soon-dot" aria-hidden="true" />
-        Coming Soon
-      </span>
-    </div>
-  )
-}
 
 export default function ResultPage() {
   const { state } = useLocation()
   const navigate = useNavigate()
   const [data, setData] = useState(() => state ? { ...state, result: parseResult(state.result) } : null)
+  const analysisGender = state?.gender ?? null
   const viewTrackedRef = useRef(false)
 
   // 만족도 평가 다이얼로그 상태
@@ -149,8 +145,6 @@ export default function ResultPage() {
   const r = data.result ?? {}
   const best = r.bestColors ?? []
   const worst = r.worstColors ?? []
-  const top = r.clothing?.top ?? []
-  const rules = r.avoidRules ?? []
 
   const handlePurchaseOpen = async () => {
     trackEvent('purchase_dialog_open')
@@ -259,9 +253,10 @@ export default function ResultPage() {
       const res = await fetch('/api/survey/satisfaction')
       const body = await res.json()
       const isEdit = !!body.exists
+      const surveyGender = body.gender ?? toSurveyGender(analysisGender)
       setSurveyInit({
         rating: body.rating ?? 0,
-        gender: body.gender ?? null,
+        gender: surveyGender,
         comment: body.comment ?? '',
         isEdit,
       })
@@ -357,8 +352,15 @@ export default function ResultPage() {
       <div className="rp-shead" data-rp-section="type" data-rp-index="1"><span className="rp-ix">N°01</span><h2>퍼스널컬러 타입</h2></div>
       <div className="rp-type-card">
         <div className="rp-type-row">
-          <span className="rp-lab">추정 퍼스널컬러</span>
-          <span className="rp-v">{r.personalColor ?? '—'}</span>
+          <div className="rp-type-main">
+            {r.representativeHex && (
+              <span className="rp-rep-swatch" style={{ background: r.representativeHex }} title={r.personalColor} />
+            )}
+            <span className="rp-v">{r.personalColor ?? '—'}</span>
+          </div>
+          {r.confidence > 0 && (
+            <span className="rp-confidence">{r.confidence}% 확신</span>
+          )}
         </div>
         {r.mainType && (
           <div className="rp-bar">
@@ -415,44 +417,8 @@ export default function ResultPage() {
         </>
       )}
 
-      {/* N°04 CLOTH */}
-      {top.length > 0 && (
-        <>
-          <div className="rp-shead" data-rp-section="clothing" data-rp-index="4"><span className="rp-ix">N°04</span><h2>의류 추천</h2></div>
-          <div className="rp-cloth-grid">
-            <div className="rp-cloth-card">
-              <h3>상의 추천</h3>
-              <ul>{top.map((t, i) => <li key={i}>{t}</li>)}</ul>
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* N°05 RULES (실패 방지 규칙 — Coming Soon 위로 이동) */}
-      {rules.length > 0 && (
-        <>
-          <div className="rp-shead" data-rp-section="rules" data-rp-index="5"><span className="rp-ix">N°05</span><h2>실패 방지 규칙</h2></div>
-          <aside className="rp-rules">
-            <h3>이것만은 피하세요</h3>
-            <ul>{rules.map((r, i) => <li key={i}>{r}</li>)}</ul>
-          </aside>
-        </>
-      )}
-
-      {/* N°06 HAIR & ACCESSORIES (Coming Soon) */}
-      <div className="rp-shead" data-rp-section="hair_accessories" data-rp-index="6"><span className="rp-ix">N°06</span><h2>헤어 &amp; 액세서리 추천</h2></div>
-      <ComingSoonCard />
-
-      {/* N°07 SITUATION (Coming Soon) */}
-      <div className="rp-shead" data-rp-section="situation" data-rp-index="7"><span className="rp-ix">N°07</span><h2>상황별 코디 가이드</h2></div>
-      <ComingSoonCard />
-
-      {/* N°08 SHOP (Coming Soon) */}
-      <div className="rp-shead" data-rp-section="shop" data-rp-index="8"><span className="rp-ix">N°08</span><h2>쇼핑 검색어</h2></div>
-      <ComingSoonCard />
-
-      {/* N°09 SHARE — 결과 공유 토큰 */}
-      <div className="rp-shead" data-rp-section="share" data-rp-index="9"><span className="rp-ix">N°09</span><h2>친구에게 공유</h2></div>
+      {/* N°04 SHARE — 결과 공유 토큰 */}
+      <div className="rp-shead" data-rp-section="share" data-rp-index="4"><span className="rp-ix">N°04</span><h2>친구에게 공유</h2></div>
       <div className="rp-share">
         <div className="rp-share-l">
           {shareToken
@@ -469,8 +435,8 @@ export default function ResultPage() {
         </div>
       </div>
 
-      {/* N°10 SURVEY */}
-      <div className="rp-shead" data-rp-section="survey" data-rp-index="10"><span className="rp-ix">N°10</span><h2>리포트 만족도</h2></div>
+      {/* N°05 SURVEY */}
+      <div className="rp-shead" data-rp-section="survey" data-rp-index="5"><span className="rp-ix">N°05</span><h2>리포트 만족도</h2></div>
       <div className="rp-surv">
         <div className="rp-surv-l">
           리포트가 도움이 되셨나요?
@@ -479,8 +445,8 @@ export default function ResultPage() {
         <button type="button" className="rp-surv-go" onClick={handleSurvey}>만족도 평가 →</button>
       </div>
 
-      {/* N°11 PURCHASE — 베타 기간 동안은 결제 의향만 측정 */}
-      <div className="rp-shead" data-rp-section="purchase" data-rp-index="11"><span className="rp-ix">N°11</span><h2>이미지 리포트</h2></div>
+      {/* N°06 PURCHASE — 베타 기간 동안은 결제 의향만 측정 */}
+      <div className="rp-shead" data-rp-section="purchase" data-rp-index="6"><span className="rp-ix">N°06</span><h2>이미지 리포트</h2></div>
       <div className="rp-actions single">
         <button className="rp-btn-act" type="button" onClick={handlePurchaseOpen}>
           <svg viewBox="0 0 24 24" fill="none">

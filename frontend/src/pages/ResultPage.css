@@ -78,9 +78,20 @@
   margin: 0 22px; padding: 18px;
   border: 1.4px solid var(--green-deep); border-radius: 8px; background: var(--paper-card);
 }
-.rp-type-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 14px; }
+.rp-type-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+.rp-type-main { display: flex; align-items: center; gap: 10px; }
+.rp-rep-swatch {
+  width: 28px; height: 28px; border-radius: 6px;
+  border: 1.5px solid var(--green-darker); flex-shrink: 0;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+}
 .rp-lab { font-weight: 600; font-size: 13px; color: var(--green-mid); }
 .rp-v { font-weight: 900; font-size: 16px; color: var(--green-darker); letter-spacing: -0.02em; }
+.rp-confidence {
+  font-weight: 700; font-size: 12px; color: var(--green-deep);
+  background: var(--green-tint); border: 1px solid var(--green-mid);
+  border-radius: 999px; padding: 3px 10px; white-space: nowrap;
+}
 .rp-bar {
   display: grid; grid-template-columns: 50px 1fr 44px; align-items: center; gap: 10px;
   margin-top: 8px; font-weight: 700; font-size: 13px; color: var(--ink-soft);

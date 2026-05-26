@@ -192,6 +192,20 @@ spring.servlet.multipart.max-request-size=60MB
 
 ## 6. 최근 적용한 수정 (이슈 트래킹)
 
+### 2026-05-26 — AI API 변경 대응: 성별 입력 + 새 응답 구조 매핑
+
+| 항목 | 변경 |
+|---|---|
+| **목적** | AI 모듈 `/personal-color/analyze` API 변경 반영 — 이미지 경로 필드명 변경 + 성별 파라미터 추가 + 응답 구조 변경 |
+| **API 필드명 변경 (백엔드)** | multipart 필드명 `image_path` → `image`. 기존: AI 서버가 `image_path`로 받음. 변경: AI 서버가 `image`로 받음 |
+| **gender 파라미터 추가 (백엔드)** | `AnalysisController.submitPhoto`에 `@RequestParam(value="gender", defaultValue="unisex")` 추가. `AnalysisService.submitPhoto`, `callAiAnalysis` 시그니처도 동일하게 확장. multipart body에 `gender` 필드 추가 |
+| **응답 구조 변경 대응 (백엔드)** | `mapAiResponse`를 신규 AI 응답 구조로 전면 교체. `recommended_colors`·`avoid_colors`가 기존 `{categories[], reason}` → 신규 `[{name, hex, reason}]` 배열로 변경됨. hex를 API에서 직접 받으므로 컬러 조회 테이블은 fallback 용도로만 유지. `personal_color`에 `representative_hex`, `confidence` 신규 필드 추가. `attributes`에 `lightness`, `saturation` 신규 필드 추가 — `buildTagline`에 반영 (4개 속성). `recommended_tops`의 `reason` 필드를 의류 목록 문구에 포함 |
+| **결과 맵 신규 필드 (백엔드)** | `representativeHex`, `confidence` 필드 추가. 프론트에서 대표색 swatch와 신뢰도 배지를 표시하는 데 사용 |
+| **성별 선택 UI (프론트)** | `UploadPage.jsx`에 성별 토글 버튼(남/녀/무관) 추가. 성별을 선택해야 "분석 시작하기" 버튼 활성화. 남→`male`, 녀→`female`, 무관→`unisex`로 매핑해 LoadingPage → API 전달. `up-gender*` CSS 신규 |
+| **FormData gender 전달 (프론트)** | `LoadingPage.jsx`에서 `state.gender`를 FormData에 `gender` 필드로 추가. 미전달 시 `unisex` fallback |
+| **결과 페이지 업데이트 (프론트)** | `ResultPage.jsx` N°01 타입 카드에 대표색 swatch(`rp-rep-swatch`)와 신뢰도 배지(`rp-confidence`) 추가. 베스트/워스트 컬러의 `use`·`reason`이 이제 색상별 개별 이유로 표시됨(기존: 전체 공유 한 줄) |
+| **GA 이벤트** | `analysis_submitted`·`analysis_completed` 파라미터에 `gender` 추가 — 성별별 분석 분포 측정 |
+
 ### 2026-05-25 — 어드민 분석 집계 변경 + 리포트 퍼널 추가
 
 | 항목 | 변경 |
@@ -493,10 +507,10 @@ GA4를 통해 익명 사용자의 행동을 수집해 퍼널 이탈률·검증 �
 | `cta_click` | `cta`, `location` | HomePage 히어로 CTA, 탭바 진단하기 | 어느 위치 CTA가 진단 전환에 더 기여하는가 |
 | `photo_selected` | `size_kb` | UploadPage 사진 첨부 성공 | 업로드 페이지 도달 → 실제 첨부 비율 |
 | `photo_rejected_client` | `reason` (`mime_or_ext`/`size`), `file_type`, `size_mb` | UploadPage 클라이언트 검증 거부 | 거부 사유 분포 — HEIC 등 미지원 포맷 비율, 10MB 초과 비율 |
-| `analysis_submitted` | `resized_kb` | UploadPage `handleSubmit` 후 `/loading` 진입 | 진단 시도 수 (퍼널 핵심 지표) |
+| `analysis_submitted` | `resized_kb`, `gender` | UploadPage `handleSubmit` 후 `/loading` 진입 | 진단 시도 수 (퍼널 핵심 지표), 성별별 분석 분포 |
 | `analysis_reused` | `source` | UploadPage에서 기존 COMPLETED 발견 시 | "한 번 진단" 제약으로 캐시 결과 보는 횟수 (재방문 의도 지표) |
 | `photo_resize_failed` | — | UploadPage 캔버스 리사이즈 실패 | 브라우저/이미지 호환성 이슈 |
-| `analysis_completed` | `personal_color`, `main_type`, `elapsed_ms`, `face_image_saved` | LoadingPage 백엔드 응답 성공 | 톤 카테고리 분포, 평균 분석 소요시간, 얼굴 이미지 저장 성공률 |
+| `analysis_completed` | `personal_color`, `main_type`, `elapsed_ms`, `face_image_saved`, `gender` | LoadingPage 백엔드 응답 성공 | 톤 카테고리 분포, 평균 분석 소요시간, 얼굴 이미지 저장 성공률, 성별별 결과 분포 |
 | `analysis_failed` | `reason` (`validation_failed`/`in_progress_409`/`network`/`unknown`), `elapsed_ms`, `attempt_no` | LoadingPage 백엔드 응답 실패 | 백엔드 검증 실패 사유 분포, 누적 실패 횟수별 이탈 비교(2·3회차 좌절 시그널) |
 | `retry_clicked` | `reason`, `location` (`error_cta`/`error_tabbar`) | ErrorPage 재시도 CTA | 검증 실패 후 재시도율 — 이탈 vs 재도전 |
 | `result_view` | `personal_color`, `main_type` | ResultPage 최초 진입 (1회만) | 결과 페이지 진입 수 (실 완료자 수) |

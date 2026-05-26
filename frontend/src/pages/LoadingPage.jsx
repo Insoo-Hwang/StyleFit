@@ -54,6 +54,7 @@ export default function LoadingPage() {
 
     const formData = new FormData()
     formData.append('file', file)
+    formData.append('gender', state?.gender ?? 'unisex')
 
     const startedAt = Date.now()
     const fetchPromise = fetch('/api/analysis/submit-photo', {
@@ -83,10 +84,10 @@ export default function LoadingPage() {
     fetchPromise.then((result) => {
       const elapsed_ms = Date.now() - startedAt
       if (result.kind === 'completed') {
-        trackEvent('analysis_completed', { ...extractTone(result.result), elapsed_ms, face_image_saved: result.faceImageSaved ?? false })
+        trackEvent('analysis_completed', { ...extractTone(result.result), elapsed_ms, face_image_saved: result.faceImageSaved ?? false, gender: state?.gender ?? 'unisex' })
         navigate('/result', {
           replace: true,
-          state: { result: result.result, reportImageUrl: result.reportImageUrl, reportImageCached: result.reportImageCached },
+          state: { result: result.result, reportImageUrl: result.reportImageUrl, reportImageCached: result.reportImageCached, gender: state?.gender ?? null },
         })
       } else {
         // rate_limited / banned 는 검증 실패가 아니므로 failed_attempts 카운터는 올리지 않는다.

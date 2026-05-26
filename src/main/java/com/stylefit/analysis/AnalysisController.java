@@ -43,10 +43,11 @@ public class AnalysisController {
     @PostMapping("/submit-photo")
     public ResponseEntity<AnalysisResponse> submitPhoto(
             @RequestParam("file") MultipartFile file,
+            @RequestParam(value = "gender", defaultValue = "unisex") String gender,
             HttpServletRequest request) {
         String cookieId = (String) request.getAttribute(AnonymousCookieFilter.REQUEST_ATTR);
         String clientIp = banService.extractClientIp(request);
-        return ResponseEntity.ok(analysisService.submitPhoto(cookieId, clientIp, file));
+        return ResponseEntity.ok(analysisService.submitPhoto(cookieId, clientIp, file, gender));
     }
 
     /**

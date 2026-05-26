@@ -29,21 +29,19 @@ export default function SatisfactionDialog({
   onSubmit,
 }) {
   const [rating, setRating] = useState(initialRating)
-  const [gender, setGender] = useState(initialGender)
   const [comment, setComment] = useState(initialComment)
 
   // 다이얼로그가 새로 열릴 때마다 초기값을 동기화
   useEffect(() => {
     if (open) {
       setRating(initialRating)
-      setGender(initialGender)
       setComment(initialComment)
     }
-  }, [open, initialRating, initialGender, initialComment])
+  }, [open, initialRating, initialComment])
 
   if (!open) return null
 
-  const canSubmit = rating >= 1 && rating <= 5 && (gender === 'MALE' || gender === 'FEMALE') && !submitting
+  const canSubmit = rating >= 1 && rating <= 5 && !submitting
 
   const handleCommentChange = (e) => {
     const v = e.target.value
@@ -53,7 +51,7 @@ export default function SatisfactionDialog({
 
   const handleSubmit = () => {
     if (!canSubmit) return
-    onSubmit({ rating, gender, comment: comment.trim() })
+    onSubmit({ rating, gender: initialGender, comment: comment.trim() })
   }
 
   return (
@@ -76,21 +74,6 @@ export default function SatisfactionDialog({
         <p className="sd-rating-label">
           {rating > 0 ? `${rating} / 5` : '별점을 선택해주세요'}
         </p>
-
-        <div className="sd-gender" role="radiogroup" aria-label="성별">
-          <button
-            type="button"
-            className={`sd-gender-btn${gender === 'MALE' ? ' on' : ''}`}
-            onClick={() => setGender('MALE')}
-            aria-pressed={gender === 'MALE'}
-          >남자</button>
-          <button
-            type="button"
-            className={`sd-gender-btn${gender === 'FEMALE' ? ' on' : ''}`}
-            onClick={() => setGender('FEMALE')}
-            aria-pressed={gender === 'FEMALE'}
-          >여자</button>
-        </div>
 
         <label className="sd-ta-label">
           <span>의견 (선택)</span>

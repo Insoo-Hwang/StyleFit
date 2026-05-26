@@ -135,7 +135,7 @@ public class AnalysisService {
      *       AI 서버 호출 시간이 길어지면 별도 트랜잭션으로 분리 고려.
      */
     @Transactional
-    public AnalysisResponse submitPhoto(String cookieId, String clientIp, MultipartFile file) {
+    public AnalysisResponse submitPhoto(String cookieId, String clientIp, MultipartFile file, String gender) {
         if (file == null || file.isEmpty()) {
             return AnalysisResponse.validationFailed(List.of("사진을 1장 업로드해주세요."));
         }
@@ -181,9 +181,10 @@ public class AnalysisService {
         }
         repository.save(entity);
 
-        // 저장된 파일의 절대 경로를 AI 서버로 전달
+        // 저장된 파일을 바이너리로 읽어 AI 서버에 업로드
+        String safeGender = (gender != null && !gender.isBlank()) ? gender : "unisex";
         Path imagePath = Paths.get(faceStorageDir).toAbsolutePath().resolve(faceFilename);
-        String resultJson = callAiAnalysis(imagePath);
+        String resultJson = callAiAnalysis(imagePath, safeGender);
 
         if (resultJson == null) {
             // AI 분석 실패 — 저장한 사진 삭제 후 FAILED 기록
@@ -251,27 +252,49 @@ public class AnalysisService {
     // -----------------------------------------------------------------------
 
     /**
-     * 디스크에 저장된 이미지 파일의 절대 경로를 AI 서버로 전달해 퍼스널컬러 분석 결과를 받는다.
-     * AI 서버와 Spring Boot 서버가 같은 머신에 있어 파일 시스템을 공유한다고 가정한다.
+     * 디스크에 저장된 이미지 파일을 AI 서버에 업로드해 퍼스널컬러 분석 결과를 받는다.
      *
-     * 전송 형식: multipart/form-data, 필드명 "image_path" (text/plain) = 절대 경로 문자열
+     * 전송 형식: multipart/form-data
+     *   - "image"  (application/octet-stream) = 실제 이미지 파일 바이너리
+     *   - "gender" (text/plain) = male | female | unisex
      *
      * @return 매핑된 JSON 문자열, 또는 null (AI 422 — 이미지 처리 불가)
      * @throws ResponseStatusException (500) AI 서버 오류 또는 네트워크 장애 시
      */
-    private String callAiAnalysis(Path imageFile) {
-        String imagePath = imageFile.toAbsolutePath().toString();
+    private String callAiAnalysis(Path imageFile, String gender) {
         String boundary = "----FormBoundary" + UUID.randomUUID().toString().replace("-", "");
+        String filename = imageFile.getFileName().toString();
+        String ext = filename.contains(".") ? filename.substring(filename.lastIndexOf('.') + 1).toLowerCase() : "jpg";
+        String mimeType = switch (ext) {
+            case "png"  -> "image/png";
+            case "webp" -> "image/webp";
+            case "gif"  -> "image/gif";
+            default     -> "image/jpeg";
+        };
+
+        byte[] imageBytes;
+        try {
+            imageBytes = Files.readAllBytes(imageFile);
+        } catch (IOException e) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "이미지 파일 읽기 오류");
+        }
 
         byte[] multipartBody;
         try {
-            byte[] pathBytes = imagePath.getBytes(StandardCharsets.UTF_8);
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            // image field — 실제 파일 바이너리
             baos.write(("--" + boundary + "\r\n").getBytes(StandardCharsets.ISO_8859_1));
-            baos.write(("Content-Disposition: form-data; name=\"image_path\"\r\n").getBytes(StandardCharsets.ISO_8859_1));
-            baos.write(("Content-Type: text/plain; charset=utf-8\r\n").getBytes(StandardCharsets.ISO_8859_1));
+            baos.write(("Content-Disposition: form-data; name=\"image\"; filename=\"" + filename + "\"\r\n").getBytes(StandardCharsets.ISO_8859_1));
+            baos.write(("Content-Type: " + mimeType + "\r\n").getBytes(StandardCharsets.ISO_8859_1));
             baos.write("\r\n".getBytes(StandardCharsets.ISO_8859_1));
-            baos.write(pathBytes);
+            baos.write(imageBytes);
+            baos.write("\r\n".getBytes(StandardCharsets.ISO_8859_1));
+            // gender field
+            baos.write(("--" + boundary + "\r\n").getBytes(StandardCharsets.ISO_8859_1));
+            baos.write("Content-Disposition: form-data; name=\"gender\"\r\n".getBytes(StandardCharsets.ISO_8859_1));
+            baos.write("Content-Type: text/plain; charset=utf-8\r\n".getBytes(StandardCharsets.ISO_8859_1));
+            baos.write("\r\n".getBytes(StandardCharsets.ISO_8859_1));
+            baos.write(gender.getBytes(StandardCharsets.UTF_8));
             baos.write("\r\n".getBytes(StandardCharsets.ISO_8859_1));
             baos.write(("--" + boundary + "--\r\n").getBytes(StandardCharsets.ISO_8859_1));
             multipartBody = baos.toByteArray();
@@ -279,7 +302,7 @@ public class AnalysisService {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "multipart 빌드 오류");
         }
 
-        log.info("AI call — image_path={}", imagePath);
+        log.info("AI call — image_file={}, size={}bytes, gender={}", filename, imageBytes.length, gender);
 
         String rawJson;
         try {
@@ -337,21 +360,21 @@ public class AnalysisService {
     // -----------------------------------------------------------------------
 
     /**
-     * AI 모듈 응답(report 구조)을 ResultPage 가 소비하는 레거시 JSON 형식으로 변환한다.
+     * AI 모듈 응답(report 구조)을 ResultPage 가 소비하는 JSON 형식으로 변환한다.
      *
      * AI 응답 구조:
-     *   report.personal_color.{type, reason, attributes, season_scores}
-     *   report.recommended_colors.{categories[], reason}
-     *   report.avoid_colors.{categories[], reason}
+     *   report.personal_color.{type, representative_color, representative_hex, confidence, reason, attributes, season_scores}
+     *   report.recommended_colors[{name, hex, reason}]
+     *   report.avoid_colors[{name, hex, reason}]
      *   report.color_rules[]
      *   report.recommended_tops[{item, color, fit, reason}]
      *   report.avoid_tops[{item, color, fit, reason}]
      *
      * 매핑 결과 구조 (프론트 기대값):
-     *   personalColor, tagline, heroLede,
+     *   personalColor, tagline, heroLede, confidence, representativeHex,
      *   mainType, mainPercent, secondaryType, secondaryPercent,
      *   bestColors[{hex, name, use}], worstColors[{hex, name, reason}],
-     *   clothing.{top[], bottom[]}, avoidRules[]
+     *   clothing.{top[]}, avoidRules[]
      */
     private String mapAiResponse(String rawJson) throws Exception {
         JsonNode report = objectMapper.readTree(rawJson).path("report");
@@ -359,66 +382,71 @@ public class AnalysisService {
 
         String type = pc.path("type").asText("");
         String reason = pc.path("reason").asText("");
+        String representativeHex = nullIfBlank(pc.path("representative_hex").asText(null));
+        int confidence = pc.path("confidence").asInt(0);
 
         JsonNode attrs = pc.path("attributes");
         String temperature = attrs.path("temperature").path("value").asText("");
-        String clarity = attrs.path("clarity").path("value").asText("");
+        String lightness   = attrs.path("lightness").path("value").asText("");
+        String saturation  = attrs.path("saturation").path("value").asText("");
+        String clarity     = attrs.path("clarity").path("value").asText("");
 
         // season_scores → 비율 내림차순 정렬
         List<JsonNode> scores = new ArrayList<>();
         pc.path("season_scores").forEach(scores::add);
         scores.sort((a, b) -> b.path("percent").asInt() - a.path("percent").asInt());
 
-        String mainType     = scores.isEmpty()  ? null : nullIfBlank(scores.get(0).path("season").asText(null));
-        int    mainPercent  = scores.isEmpty()  ? 0    : scores.get(0).path("percent").asInt();
-        String secType      = scores.size() < 2 ? null : nullIfBlank(scores.get(1).path("season").asText(null));
-        int    secPercent   = scores.size() < 2 ? 0    : scores.get(1).path("percent").asInt();
+        String mainType    = scores.isEmpty()  ? null : nullIfBlank(scores.get(0).path("season").asText(null));
+        int    mainPercent = scores.isEmpty()  ? 0    : scores.get(0).path("percent").asInt();
+        String secType     = scores.size() < 2 ? null : nullIfBlank(scores.get(1).path("season").asText(null));
+        int    secPercent  = scores.size() < 2 ? 0    : scores.get(1).path("percent").asInt();
 
-        // bestColors
-        JsonNode recColors = report.path("recommended_colors");
-        String   recReason = recColors.path("reason").asText("");
+        // bestColors from recommended_colors array [{name, hex, reason}]
         List<Map<String, Object>> bestColors = new ArrayList<>();
-        for (JsonNode cat : recColors.path("categories")) {
-            String name = cat.asText();
+        for (JsonNode color : report.path("recommended_colors")) {
+            String name = color.path("name").asText("").trim();
             if (name.isBlank()) continue;
+            String hex = nullIfBlank(color.path("hex").asText(null));
+            if (hex == null) hex = lookupHex(name);
             Map<String, Object> c = new LinkedHashMap<>();
-            c.put("hex", lookupHex(name));
+            c.put("hex", hex);
             c.put("name", name);
-            c.put("use", truncate(recReason, 25));
+            c.put("use", truncate(color.path("reason").asText(""), 40));
             bestColors.add(c);
         }
 
-        // worstColors
-        JsonNode avoidColors = report.path("avoid_colors");
-        String   avoidReason = avoidColors.path("reason").asText("");
+        // worstColors from avoid_colors array [{name, hex, reason}]
         List<Map<String, Object>> worstColors = new ArrayList<>();
-        for (JsonNode cat : avoidColors.path("categories")) {
-            String name = cat.asText();
+        for (JsonNode color : report.path("avoid_colors")) {
+            String name = color.path("name").asText("").trim();
             if (name.isBlank()) continue;
+            String hex = nullIfBlank(color.path("hex").asText(null));
+            if (hex == null) hex = lookupHex(name);
             Map<String, Object> c = new LinkedHashMap<>();
-            c.put("hex", lookupHex(name));
+            c.put("hex", hex);
             c.put("name", name);
-            c.put("reason", truncate(avoidReason, 25));
+            c.put("reason", truncate(color.path("reason").asText(""), 40));
             worstColors.add(c);
         }
 
         // clothing.top from recommended_tops
         List<String> topList = new ArrayList<>();
         for (JsonNode top : report.path("recommended_tops")) {
-            String item  = top.path("item").asText("").trim();
-            String color = top.path("color").asText("").trim();
-            String fit   = top.path("fit").asText("").trim();
+            String item      = top.path("item").asText("").trim();
+            String color     = top.path("color").asText("").trim();
+            String fit       = top.path("fit").asText("").trim();
+            String topReason = top.path("reason").asText("").trim();
             if (item.isBlank()) continue;
-            if (color.isBlank() && fit.isBlank()) {
-                topList.add(item);
-            } else {
-                StringBuilder sb = new StringBuilder(item).append(" (");
+            StringBuilder sb = new StringBuilder(item);
+            if (!color.isBlank() || !fit.isBlank()) {
+                sb.append(" (");
                 if (!color.isBlank()) sb.append(color);
                 if (!color.isBlank() && !fit.isBlank()) sb.append(", ");
                 if (!fit.isBlank()) sb.append(fit);
                 sb.append(")");
-                topList.add(sb.toString());
             }
+            if (!topReason.isBlank()) sb.append(" — ").append(truncate(topReason, 30));
+            topList.add(sb.toString());
         }
 
         // avoidRules: color_rules 먼저, 이후 avoid_tops 설명 추가
@@ -439,8 +467,10 @@ public class AnalysisService {
         // 결과 맵 조립
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("personalColor", type);
-        result.put("tagline", buildTagline(temperature, clarity));
+        result.put("tagline", buildTagline(temperature, lightness, saturation, clarity));
         result.put("heroLede", reason);
+        result.put("confidence", confidence);
+        if (representativeHex != null) result.put("representativeHex", representativeHex);
         result.put("mainType", mainType);
         result.put("mainPercent", mainPercent);
         if (secType != null) {
@@ -455,9 +485,11 @@ public class AnalysisService {
         return objectMapper.writeValueAsString(result);
     }
 
-    private String buildTagline(String temperature, String clarity) {
+    private String buildTagline(String temperature, String lightness, String saturation, String clarity) {
         List<String> parts = new ArrayList<>();
         if (temperature != null && !temperature.isBlank()) parts.add(temperature);
+        if (lightness   != null && !lightness.isBlank())   parts.add(lightness);
+        if (saturation  != null && !saturation.isBlank())  parts.add(saturation);
         if (clarity     != null && !clarity.isBlank())     parts.add(clarity);
         return parts.isEmpty() ? "" : String.join(" · ", parts) + " 무드";
     }

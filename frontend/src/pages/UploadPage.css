@@ -165,6 +165,31 @@
   text-decoration: underline; text-decoration-style: dashed; text-underline-offset: 3px;
 }
 
+/* GENDER SELECTOR */
+.up-gender {
+  margin: 18px 22px 0;
+  display: flex; align-items: center; gap: 14px;
+}
+.up-gender-label {
+  font-weight: 700; font-size: 14px; color: var(--green-darker);
+  flex-shrink: 0;
+}
+.up-gender-btns {
+  display: flex; gap: 8px;
+}
+.up-gender-btn {
+  height: 36px; padding: 0 18px; border-radius: 999px;
+  border: 1.4px solid var(--green-mid);
+  background: transparent; color: var(--green-mid);
+  font-weight: 700; font-size: 14px; cursor: pointer;
+  transition: background 100ms, color 100ms, border-color 100ms;
+}
+.up-gender-btn.active {
+  background: var(--green-deep); color: var(--paper);
+  border-color: var(--green-deeper, var(--green-deep));
+}
+.up-gender-btn:not(.active):hover { border-color: var(--green-deep); color: var(--green-deep); }
+
 /* CTA */
 .up-cta-block { padding: 22px 22px 0; }
 .up-cta {
