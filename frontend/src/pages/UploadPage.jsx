@@ -229,7 +229,7 @@ export default function UploadPage() {
       <div className="up-gender">
         <span className="up-gender-label">성별</span>
         <div className="up-gender-btns">
-          {[['male', '남'], ['female', '녀'], ['unisex', '미선택']].map(([v, label]) => (
+          {[['male', '남'], ['female', '여'], ['unisex', '미선택']].map(([v, label]) => (
             <button
               key={v}
               type="button"

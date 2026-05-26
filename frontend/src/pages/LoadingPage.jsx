@@ -21,7 +21,14 @@ const STEPS = [
   '피부톤 · 얼굴형 분석 중…',
   '스타일 리포트 생성 중…',
 ]
-const STEP_MS = 5000   // 5초마다 다음 단계 (총 15초)
+const VALIDATION_MS = 2000  // 사진 검증 단계 표시 시간 (YuNet 보통 0.5-2s)
+const AI_STEP_MS = 5000     // 이후 단계 간격
+
+const HERO_LABELS = [
+  { title: '사진 검증 중', sub: '사진 품질과 얼굴 인식을 확인하고 있어요' },
+  { title: 'AI 분석 중',   sub: '피부톤 · 얼굴형 · 분위기를 읽고 있어요' },
+  { title: '리포트 생성 중', sub: '나만의 스타일 리포트를 만들고 있어요' },
+]
 
 const FACTS = [
   '퍼스널컬러를 알면 같은 옷도 더 어울려 보일 수 있습니다. 색 하나가 인상을 크게 바꾸기도 해요.',
@@ -38,6 +45,14 @@ export default function LoadingPage() {
   const startedRef = useRef(false)
   const { checkReport, dialog } = useReportCheck('loading_tabbar')
 
+  // 단계 진행 타이머 — startedRef 가드와 분리해야 StrictMode 이중 호출에서도 정상 동작
+  useEffect(() => {
+    if (!state?.file) return
+    const t1 = setTimeout(() => setActiveStep(1), VALIDATION_MS)
+    const t2 = setTimeout(() => setActiveStep(2), VALIDATION_MS + AI_STEP_MS)
+    return () => { clearTimeout(t1); clearTimeout(t2) }
+  }, [!!state?.file]) // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     if (startedRef.current) return
     startedRef.current = true
@@ -47,10 +62,6 @@ export default function LoadingPage() {
       navigate('/upload', { replace: true })
       return
     }
-
-    // 단계 진행 타이머: 5s, 10s 시점에 active 단계 진행 (시각적 연출용)
-    const t1 = setTimeout(() => setActiveStep(1), STEP_MS)
-    const t2 = setTimeout(() => setActiveStep(2), STEP_MS * 2)
 
     const formData = new FormData()
     formData.append('file', file)
@@ -113,7 +124,6 @@ export default function LoadingPage() {
       }
     })
 
-    return () => { clearTimeout(t1); clearTimeout(t2) }
   }, [navigate, state])
 
   // 팩트 캐러셀
@@ -146,8 +156,8 @@ export default function LoadingPage() {
             <circle className="ld-spin-arc" cx="50" cy="50" r="40" strokeWidth="6" strokeDasharray="90 251" />
           </svg>
         </div>
-        <h2>AI가 분석 중입니다</h2>
-        <p className="ld-sub">얼굴톤 · 얼굴형 · 분위기를 읽고 있어요</p>
+        <h2 key={`h2-${activeStep}`}>{HERO_LABELS[activeStep].title}</h2>
+        <p key={`p-${activeStep}`} className="ld-sub">{HERO_LABELS[activeStep].sub}</p>
       </section>
 
       <div className="ld-alist">

@@ -192,6 +192,28 @@ spring.servlet.multipart.max-request-size=60MB
 
 ## 6. 최근 적용한 수정 (이슈 트래킹)
 
+### 2026-05-26 — 로딩 페이지 스피너 단계별 텍스트 표시
+
+| 항목 | 변경 |
+|---|---|
+| **목적** | 스피너 중앙 텍스트가 항상 "AI가 분석 중입니다"로 고정되어 있어 실제 처리 단계를 반영하지 못함. 단계에 따라 텍스트를 전환해 UX 개선 |
+| **HERO_LABELS 추가 (프론트)** | `LoadingPage.jsx`에 3단계 레이블 배열 추가. Step 0: "사진 검증 중" / "사진 품질과 얼굴 인식을 확인하고 있어요". Step 1: "AI 분석 중" / "피부톤 · 얼굴형 · 분위기를 읽고 있어요". Step 2: "리포트 생성 중" / "나만의 스타일 리포트를 만들고 있어요" |
+| **스피너 h2·p 동적 바인딩 (프론트)** | `ld-hero`의 `<h2>`·`<p>` 텍스트를 `HERO_LABELS[activeStep]`으로 교체. `key={h2-${activeStep}}` 부여 → 단계 전환 시 React가 엘리먼트를 재마운트해 CSS 애니메이션이 정확히 트리거됨 |
+| **페이드 애니메이션 추가 (CSS)** | `LoadingPage.css`에 `ld-label-in` 키프레임 추가 (`opacity 0→1`, `translateY 6px→0`, 0.35s ease). `ld-hero h2`·`.ld-sub`에 적용 — 단계 전환마다 텍스트가 아래에서 위로 올라오며 페이드인 |
+| **단계 매핑 근거** | 타이머 기반(5초 간격). Step 0(0–5s)은 실제 사진 검증(YuNet, 보통 1–3s)을 커버하기에 충분. 백엔드 단일 API 호출 구조상 실시간 상태 스트림 없이 타이머로 추정 |
+| **GA 이벤트** | 없음 (UI 전용 변경) |
+
+### 2026-05-26 — 공유 링크 ref `_share` suffix 추적
+
+| 항목 | 변경 |
+|---|---|
+| **목적** | 공유 링크(`/share/<token>`)로 들어온 신규 방문자가 ref 파라미터 없이 접속해 어드민·GA 모두 `direct`로 집계되던 문제 해결. 원래 ref 채널 + `_share` suffix로 바이럴 유입을 별도 추적 |
+| **shareUrl 생성 변경 (프론트)** | `ResultPage.jsx`에서 `getRef` import 추가. 공유 URL 생성 시 `?ref=${getRef() ? \`${getRef()}_share\` : 'share'}` 추가. 예: `?ref=instagram` → 공유 URL은 `?ref=instagram_share`. ref 없는 사용자(direct)의 공유는 `?ref=share` |
+| **적용 범위** | 카카오톡 공유·URL 복사 모두 동일한 `shareUrl` prop을 사용하므로 양쪽 동시 적용 |
+| **서버 처리** | `AnonymousCookieFilter.sanitizeRef`가 `[a-z0-9_-]` 허용·20자 절삭 규칙을 그대로 적용. `instagram_share`(15자) 등 실용적인 ref는 모두 통과. 쿠키 `<uuid>_instagram_share` 형태로 발급 |
+| **어드민 효과** | 유입 경로 분석에서 `instagram`(직접 유입)과 `instagram_share`(공유 유입)가 별도 행으로 분리 — 채널별 바이럴 전환율 측정 가능 |
+| **GA 이벤트** | 없음 (기존 `share_view` 이벤트의 `ref` 파라미터 자동 첨부로 GA에서도 채널 분리 가능) |
+
 ### 2026-05-26 — AI API 변경 대응: 성별 입력 + 새 응답 구조 매핑
 
 | 항목 | 변경 |

@@ -54,8 +54,12 @@
   stroke: var(--gold); stroke-linecap: round;
   transform-origin: 50% 50%; animation: sf-spin 1.2s linear infinite;
 }
-.ld-hero h2 { margin: 0; font-weight: 900; font-size: 22px; letter-spacing: -0.01em; }
-.ld-sub { margin: 10px 0 0; font-weight: 600; font-size: 15px; color: rgba(244,241,232,0.85); }
+.ld-hero h2 { margin: 0; font-weight: 900; font-size: 22px; letter-spacing: -0.01em; animation: ld-label-in 0.35s ease; }
+.ld-sub { margin: 10px 0 0; font-weight: 600; font-size: 15px; color: rgba(244,241,232,0.85); animation: ld-label-in 0.35s ease; }
+@keyframes ld-label-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
 .ld-eta {
   margin-top: 18px; font-family: 'Caveat', cursive; font-size: 15px;
   color: var(--green-tint); opacity: 0.85;

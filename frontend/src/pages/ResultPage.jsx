@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import SatisfactionDialog from '../components/SatisfactionDialog.jsx'
 import PurchaseIntentDialog from '../components/PurchaseIntentDialog.jsx'
 import ShareDialog from '../components/ShareDialog.jsx'
-import { trackEvent } from '../analytics'
+import { trackEvent, getRef } from '../analytics'
 import './ResultPage.css'
 
 function parseResult(raw) {
@@ -310,7 +310,7 @@ export default function ResultPage() {
       {shareToken && (
         <ShareDialog
           open={shareDialogOpen}
-          shareUrl={`${window.location.origin}/share/${shareToken}`}
+          shareUrl={`${window.location.origin}/share/${shareToken}?ref=${getRef() ? `${getRef()}_share` : 'share'}`}
           reportImageUrl={reportImageUrl}
           personalColor={r.personalColor}
           onClose={() => setShareDialogOpen(false)}
