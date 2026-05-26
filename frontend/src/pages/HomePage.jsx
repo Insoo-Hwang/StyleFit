@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import useReportCheck from '../hooks/useReportCheck.jsx'
 import { trackEvent } from '../analytics'
 import './HomePage.css'
@@ -117,9 +117,9 @@ export default function HomePage() {
       </div>
 
       <footer className="hm-footer">
-        <a href="#">개인정보 처리방침</a>
+        <Link to="/privacy">개인정보 처리방침</Link>
         <span className="hm-sep">/</span>
-        <a href="#">이용약관</a>
+        <Link to="/terms">이용약관</Link>
         <br />
         © 2026 STYLE — copyright placeholder
       </footer>
