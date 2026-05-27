@@ -289,19 +289,6 @@ export default function UploadPage() {
       <div className="up-meta-row">JPG · PNG · HEIC · 최대 10MB</div>
       {warning && <div className="up-warn-row">⚠ {warning}</div>}
 
-      <aside className="up-priv">
-        <span className="up-lock" aria-hidden="true">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-            <rect x="5" y="10" width="14" height="10" rx="2" stroke="currentColor" strokeWidth="1.6" />
-            <path d="M8 10V7a4 4 0 0 1 8 0v3" stroke="currentColor" strokeWidth="1.6" />
-          </svg>
-        </span>
-        <div>
-          업로드한 사진은 분석 후 즉시 삭제되며, 외부에 공유되지 않습니다.<br />
-          <a href="#">개인정보 처리방침 보기 →</a>
-        </div>
-      </aside>
-
       <div className="up-cta-block">
         <button
           className="up-cta"
