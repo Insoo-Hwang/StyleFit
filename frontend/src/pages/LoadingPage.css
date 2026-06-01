@@ -54,15 +54,27 @@
   stroke: var(--gold); stroke-linecap: round;
   transform-origin: 50% 50%; animation: sf-spin 1.2s linear infinite;
 }
-.ld-hero h2 { margin: 0; font-weight: 900; font-size: 22px; letter-spacing: -0.01em; animation: ld-label-in 0.35s ease; }
+.ld-hero h2 { margin: 0; font-family: 'Black Han Sans', sans-serif; font-weight: 400; font-size: 24px; letter-spacing: 0.01em; animation: ld-label-in 0.35s ease; }
 .ld-sub { margin: 10px 0 0; font-weight: 600; font-size: 15px; color: rgba(244,241,232,0.85); animation: ld-label-in 0.35s ease; }
 @keyframes ld-label-in {
   from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 .ld-eta {
-  margin-top: 18px; font-family: 'Caveat', cursive; font-size: 15px;
+  margin-top: 18px; font-size: 14px; font-weight: 600;
   color: var(--green-tint); opacity: 0.85;
+}
+
+/* PROGRESS BAR */
+.ld-progress-wrap {
+  margin-top: 20px; height: 5px; border-radius: 999px;
+  background: rgba(255,255,255,0.18); overflow: hidden;
+}
+.ld-progress-bar {
+  height: 100%; border-radius: 999px;
+  background: var(--gold);
+  transition: width 0.6s cubic-bezier(0.25, 0.8, 0.25, 1);
+  min-width: 4%;
 }
 
 /* ANALYSIS LIST */
@@ -92,6 +104,34 @@
 .ld-b.active {
   border-color: var(--green-deep); border-top-color: transparent;
   animation: sf-spin 1s linear infinite; background: transparent;
+}
+
+/* SEASON TEASER */
+.ld-seasons {
+  margin: 16px 22px 0;
+  border: 1.4px solid var(--green-deep); border-radius: 6px;
+  background: var(--paper-card); padding: 14px 16px;
+}
+.ld-seasons-lab {
+  font-family: 'Gaegu', cursive; font-weight: 700; font-size: 15px; color: var(--green-mid); margin: 0 0 10px; text-align: center;
+}
+.ld-seasons-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.ld-season-row { display: flex; align-items: center; gap: 8px; }
+.ld-sn { font-family: 'Black Han Sans', sans-serif; font-size: 13px; font-weight: 400; color: var(--ink); min-width: 52px; }
+.ld-st {
+  flex: 1; height: 6px; border-radius: 999px;
+  background: rgba(0,0,0,0.07); overflow: hidden;
+}
+.ld-sf {
+  height: 100%; border-radius: 999px; min-width: 4%;
+  transition: width 0.55s ease-out;
+  opacity: 0.85;
+}
+.ld-sp { font-size: 12px; font-weight: 600; color: var(--green-mid); min-width: 32px; text-align: right; }
+.ld-seasons-note {
+  margin: 10px 0 0; text-align: center;
+  font-family: 'Gaegu', cursive; font-size: 14px;
+  color: var(--green-mid);
 }
 
 /* FACT */

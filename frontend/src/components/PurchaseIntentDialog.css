@@ -117,6 +117,9 @@
   animation: pid-spin 0.8s linear infinite;
 }
 @keyframes pid-spin { to { transform: rotate(360deg); } }
+.pid-loading-sub {
+  font-size: 12px; color: var(--green-mid); opacity: 0.8;
+}
 
 .pid-actions {
   display: grid; grid-template-columns: 1fr 1.2fr; gap: 10px;

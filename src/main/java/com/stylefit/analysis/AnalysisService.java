@@ -1,6 +1,7 @@
 package com.stylefit.analysis;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.stylefit.ratelimit.RateLimitService;
 import com.stylefit.vision.PhotoValidationResponse;
@@ -62,10 +63,7 @@ public class AnalysisService {
 
     private static final String PRODUCT_CODE = "PERSONAL_COLOR_DIAGNOSIS";
     private static final String REPORT_URL_PREFIX = "/report-images/";
-    private static final String MOCK_REPORT_IMAGE_URL =
-            "https://placehold.co/800x1200/1f3d2e/e7d8a8?text=STYLE+Report";
-
-    // 컬러 카테고리명 → hex 코드 조회 테이블 (AI 응답에 hex 없음 → 근사값 사용)
+// 컬러 카테고리명 → hex 코드 조회 테이블 (AI 응답에 hex 없음 → 근사값 사용)
     private static final Map<String, String> COLOR_HEX_MAP;
     static {
         Map<String, String> m = new LinkedHashMap<>();
@@ -184,9 +182,9 @@ public class AnalysisService {
         // 저장된 파일을 바이너리로 읽어 AI 서버에 업로드
         String safeGender = (gender != null && !gender.isBlank()) ? gender : "unisex";
         Path imagePath = Paths.get(faceStorageDir).toAbsolutePath().resolve(faceFilename);
-        String resultJson = callAiAnalysis(imagePath, safeGender);
+        String rawJson = callAiAnalysis(imagePath, safeGender);
 
-        if (resultJson == null) {
+        if (rawJson == null) {
             // AI 분석 실패 — 저장한 사진 삭제 후 FAILED 기록
             deleteFaceImage(faceFilename);
             entity.setStatus(AnalysisStatus.FAILED);
@@ -195,8 +193,20 @@ public class AnalysisService {
                     List.of("AI 모듈이 이미지를 분석하지 못했습니다. 더 선명한 정면 사진으로 다시 시도해주세요."));
         }
 
-        // AI 분석 성공 — 경로를 DB에 저장
+        String resultJson;
+        try {
+            resultJson = mapAiResponse(rawJson);
+        } catch (Exception e) {
+            log.error("AI response mapping failed: {} | raw={}", e.getMessage(), rawJson);
+            deleteFaceImage(faceFilename);
+            entity.setStatus(AnalysisStatus.FAILED);
+            repository.save(entity);
+            return AnalysisResponse.validationFailed(List.of("AI 응답 처리 중 오류가 발생했습니다."));
+        }
+
+        // AI 분석 성공 — raw JSON(리포트 이미지 생성용)과 매핑 결과를 DB에 저장
         entity.setFaceImagePath(faceFilename);
+        entity.setRawResultJson(rawJson);
         entity.setStatus(AnalysisStatus.COMPLETED);
         entity.setResultJson(resultJson);
         repository.save(entity);
@@ -233,14 +243,18 @@ public class AnalysisService {
             throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS, "오늘 리포트 생성 한도에 도달했어요.");
         }
 
-        byte[] faceBytes = loadFaceImage(entity.getFaceImagePath());
-        String generatedUrl = callAiReportGenerator(entity.getResultJson(), faceBytes);
-        String storedFilename = downloadAndStoreReportImage(generatedUrl);
+        if (entity.getRawResultJson() == null) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "이 분석 결과는 리포트 이미지 생성을 지원하지 않습니다. 사진을 다시 업로드해주세요.");
+        }
+        String faceAbsPath = Paths.get(faceStorageDir).toAbsolutePath().resolve(entity.getFaceImagePath()).toString();
+        String reportResult = callAiReportGenerator(faceAbsPath, entity.getRawResultJson());
+        String storedFilename = storeReportImageResult(reportResult);
 
         entity.setReportImagePath(storedFilename);
         repository.save(entity);
 
-        String responseUrl = (storedFilename != null) ? REPORT_URL_PREFIX + storedFilename : generatedUrl;
+        String responseUrl = (storedFilename != null) ? REPORT_URL_PREFIX + storedFilename : reportResult;
         Map<String, Object> result = new java.util.HashMap<>();
         result.put("reportImageUrl", responseUrl);
         result.put("cached", false);
@@ -342,17 +356,44 @@ public class AnalysisService {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "AI 서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.");
         }
 
-        try {
-            return mapAiResponse(rawJson);
-        } catch (Exception e) {
-            log.error("AI response mapping failed: {} | raw={}", e.getMessage(), rawJson);
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "AI 응답 처리 중 오류가 발생했습니다.");
-        }
+        return rawJson;
     }
 
-    private String callAiReportGenerator(String resultJson, byte[] imageBytes) {
-        // TODO: Python AI 서버로 HTTP 요청 (RestClient)
-        return MOCK_REPORT_IMAGE_URL;
+    private String callAiReportGenerator(String faceAbsPath, String rawResultJson) {
+        try {
+            JsonNode rawNode = objectMapper.readTree(rawResultJson);
+            ObjectNode body = objectMapper.createObjectNode();
+            body.put("image_path", faceAbsPath);
+            body.set("report", rawNode.path("report"));
+            byte[] requestBytes = objectMapper.writeValueAsBytes(body);
+
+            URL endpoint = new URL(aiBaseUrl + "/personal-color/report/full");
+            HttpURLConnection conn = (HttpURLConnection) endpoint.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setRequestProperty("Content-Type", "application/json");
+            conn.setRequestProperty("Accept", "application/json");
+            conn.setDoOutput(true);
+            conn.setConnectTimeout(10_000);
+            conn.setReadTimeout(120_000);
+
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(requestBytes);
+            }
+
+            int status = conn.getResponseCode();
+            if (status == 200) {
+                String resp = new String(conn.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+                return objectMapper.readTree(resp).path("report_image").asText(null);
+            }
+            InputStream err = conn.getErrorStream();
+            String errBody = err != null ? new String(err.readAllBytes(), StandardCharsets.UTF_8) : "";
+            log.error("AI report generator error {}: {}", status, errBody);
+            return null;
+
+        } catch (Exception e) {
+            log.error("callAiReportGenerator failed: {}", e.getMessage());
+            return null;
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -572,6 +613,35 @@ public class AnalysisService {
         } catch (IOException e) {
             log.warn("face image load failed: {}", e.getMessage());
             return new byte[0];
+        }
+    }
+
+    /**
+     * AI 리포트 이미지 결과를 report-images 디렉토리에 저장.
+     * - 파일 경로(AI와 같은 머신)면 Files.copy로 직접 복사
+     * - http(s):// URL이면 downloadAndStoreReportImage로 다운로드
+     */
+    private String storeReportImageResult(String reportResult) {
+        if (reportResult == null) return null;
+        if (reportResult.startsWith("http://") || reportResult.startsWith("https://")) {
+            return downloadAndStoreReportImage(reportResult);
+        }
+        try {
+            Path src = Paths.get(reportResult);
+            if (!Files.exists(src)) {
+                log.warn("report image not found at path: {}", reportResult);
+                return null;
+            }
+            String name = src.getFileName().toString();
+            String ext = name.contains(".") ? name.substring(name.lastIndexOf('.') + 1).toLowerCase() : "png";
+            String filename = UUID.randomUUID() + "." + ext;
+            Path dir = Paths.get(reportStorageDir).toAbsolutePath();
+            Files.createDirectories(dir);
+            Files.copy(src, dir.resolve(filename), StandardCopyOption.REPLACE_EXISTING);
+            return filename;
+        } catch (IOException e) {
+            log.warn("storeReportImageResult failed: {}", e.getMessage());
+            return null;
         }
     }
 

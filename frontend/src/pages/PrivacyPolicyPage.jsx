@@ -13,7 +13,7 @@ export default function PrivacyPolicyPage() {
             <path d="M15 19l-7-7 7-7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </button>
-        <div className="lg-lg">STYLE<span className="lg-dot">.</span></div>
+        <div className="lg-lg">StyleFit</div>
         <div className="lg-placeholder" />
       </header>
 
@@ -216,7 +216,7 @@ export default function PrivacyPolicyPage() {
           ← 홈으로 돌아가기
         </button>
         <p className="lg-footer-effective">시행일: 2026년 〇월 〇일</p>
-        <p>© 2026 STYLE — copyright placeholder</p>
+        <p>© 2026 StyleFit</p>
       </footer>
     </div>
   )

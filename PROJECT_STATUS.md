@@ -192,6 +192,17 @@ spring.servlet.multipart.max-request-size=60MB
 
 ## 6. 최근 적용한 수정 (이슈 트래킹)
 
+### 2026-06-01 — 로딩 페이지 이탈 방지: 진행 바 + 퍼스널컬러 타입 티저
+
+| 항목 | 변경 |
+|---|---|
+| **목적** | AI 분석 소요 시간이 불명확해 사용자가 이탈하는 문제 해결. ① 비선형 진행 바 + 카운트다운으로 대기 시간 가시화, ② 4계절 타입 확률 바가 실시간으로 흔들려 기대감 유발 |
+| **진행 바 (프론트)** | `LoadingPage.jsx`에 `barProgress`(0~0.88) · `secondsLeft` state 추가. 500ms 간격으로 `1 - (1-raw)^0.55` 비선형 곡선으로 증가 — 결과 도착 전에 100%에 도달하지 않도록 설계. 진행 바는 `.ld-hero` 카드 하단 골드(`var(--gold)`) 바로 표시. 카운트다운 텍스트: "약 N초 남았어요" → 0이 되면 "곧 완료돼요 ✦" |
+| **계절 타입 티저 (프론트)** | `SEASONS` 상수 4종 추가(봄웜/여름쿨/가을웜/겨울쿨 + 계열별 컬러). `seasonBars` state(0~88% 랜덤 값 배열). 700ms마다 ±14%p 랜덤 편차로 흔들리고, CSS `transition: width 0.55s ease-out`으로 부드럽게 표시. 분석 목록 바로 아래 배치 |
+| **기대감 UX** | 사용자가 자신의 결과가 어느 타입일지 예측하며 기다리게 유도 — 결과가 빨리 오면 "생각보다 빠르다" 긍정 반응, 오래 걸려도 흔들리는 바를 보며 이탈률 감소 |
+| **CSS 추가** | `.ld-progress-wrap/.ld-progress-bar` (진행 바 컨테이너 + 골드 필), `.ld-seasons*` 계열(계절 타입 카드 · 행 · 바 · 퍼센트 텍스트) |
+| **GA 이벤트** | `loading_teaser_shown` 신규 — 로딩 분석 시작 시 1회 발사 (`expected_seconds: 20`) |
+
 ### 2026-05-26 — 로딩 페이지 스피너 단계별 텍스트 표시
 
 | 항목 | 변경 |
@@ -564,6 +575,7 @@ GA4를 통해 익명 사용자의 행동을 수집해 퍼널 이탈률·검증 �
 | `share_diagnose_click` | `has_my_report` (true/false) | SharePage "나도 검사해보기" CTA | 공유 → 진단 전환율 (바이럴 핵심 지표) |
 | `share_compare_click` | — | SharePage "내 결과와 비교해보기" 클릭 | 비교 기능 진입 시도 |
 | `share_compare_view` | `my_color`, `other_color` | ComparePage 마운트 성공 | 비교 페이지 도달 수, 같은 톤 vs 다른 톤 매칭 분포 |
+| `loading_teaser_shown` | `expected_seconds` (20) | LoadingPage 분석 시작 1회 | 로딩 티저 노출 수 — `analysis_completed` 대비 이탈률 기준선. `expected_seconds`는 카운트다운 기준값 |
 
 ### 7.4 핵심 퍼널 (GA4 "탐색" 메뉴에서 구성)
 

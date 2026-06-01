@@ -10,6 +10,8 @@ CREATE TABLE analysis_result (
     -- 최초 분석 시 AI 리포트 모듈에서 받은 이미지를 ./report-images/ 에 저장하고
     -- 파일명만 여기에 보관한다. 다음 조회부터는 다시 다운로드하지 않고 이 파일을 재사용.
     report_image_path  VARCHAR(500),
+    -- AI 분석 원본 응답 JSON. 리포트 이미지 생성 AI 호출 시 그대로 전달.
+    raw_result_json    TEXT,
     -- 사용자가 업로드한 얼굴 원본 이미지를 ./face-images/ 에 저장하고 파일명만 보관.
     -- AI 모델 학습 및 어드민 검토용. 공개 URL 없음(정적 핸들러 미등록).
     face_image_path    VARCHAR(500),

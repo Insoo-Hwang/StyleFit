@@ -16,7 +16,7 @@ export default function HomePage() {
     <div className="hm-frame" data-screen-label="Home">
       {dialog}
       <header className="hm-topnav">
-        <div className="hm-lg">STYLE<span className="hm-dot">.</span></div>
+        <div className="hm-lg">StyleFit</div>
         <span className="hm-beta" aria-label="베타 테스트">
           BETA TEST<span className="hm-star">✦</span>
         </span>
@@ -65,7 +65,7 @@ export default function HomePage() {
         </div>
       </div>
 
-      <div className="hm-section-title">왜 &nbsp;STYLE.&nbsp;인 가</div>
+      <div className="hm-section-title">왜 &nbsp;StyleFit&nbsp;인 가</div>
       <div className="hm-values">
         <div className="hm-val">
           <span className="hm-num">1</span>
@@ -121,7 +121,7 @@ export default function HomePage() {
         <span className="hm-sep">/</span>
         <Link to="/terms">이용약관</Link>
         <br />
-        © 2026 STYLE — copyright placeholder
+        © 2026 StyleFit
       </footer>
 
       <nav className="hm-tabbar" aria-label="탭바">

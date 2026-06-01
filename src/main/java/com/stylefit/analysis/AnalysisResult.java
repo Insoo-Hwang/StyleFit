@@ -40,6 +40,10 @@ public class AnalysisResult {
     @Column(name = "report_image_path", length = 500)
     private String reportImagePath;
 
+    /** AI 분석 원본 응답 JSON — 리포트 이미지 생성 AI 호출에 그대로 전달. */
+    @Column(name = "raw_result_json", columnDefinition = "TEXT")
+    private String rawResultJson;
+
     /** 사용자 업로드 얼굴 원본 이미지 파일명 (./face-images/ 기준). AI 학습·어드민 검토용. */
     @Column(name = "face_image_path", length = 500)
     private String faceImagePath;

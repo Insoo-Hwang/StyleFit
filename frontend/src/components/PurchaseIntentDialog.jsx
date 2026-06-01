@@ -76,7 +76,10 @@ export default function PurchaseIntentDialog({
 
             <div className="pid-image-wrap">
               {imageLoading ? (
-                <div className="pid-image-loading">이미지 생성 중…</div>
+                <div className="pid-image-loading">
+                  AI 리포트 이미지 생성 중
+                  <span className="pid-loading-sub">30초~1분 정도 걸릴 수 있어요</span>
+                </div>
               ) : imageUrl ? (
                 <img src={imageUrl} alt="리포트 이미지" />
               ) : (

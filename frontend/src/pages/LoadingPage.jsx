@@ -21,8 +21,9 @@ const STEPS = [
   '피부톤 · 얼굴형 분석 중…',
   '스타일 리포트 생성 중…',
 ]
-const VALIDATION_MS = 2000  // 사진 검증 단계 표시 시간 (YuNet 보통 0.5-2s)
-const AI_STEP_MS = 5000     // 이후 단계 간격
+const VALIDATION_MS = 2000
+const AI_STEP_MS = 5000
+const EXPECTED_MS = 20_000   // 예상 총 소요시간 (초과 시 "곧 완료돼요" 표시)
 
 const HERO_LABELS = [
   { title: '사진 검증 중', sub: '사진 품질과 얼굴 인식을 확인하고 있어요' },
@@ -37,11 +38,21 @@ const FACTS = [
 ]
 const FACT_MS = 4200
 
+const SEASONS = [
+  { label: '봄 웜', color: '#d4906a' },
+  { label: '여름 쿨', color: '#7fa8c2' },
+  { label: '가을 웜', color: '#b86d38' },
+  { label: '겨울 쿨', color: '#7288aa' },
+]
+
 export default function LoadingPage() {
   const navigate = useNavigate()
   const { state } = useLocation()
   const [activeStep, setActiveStep] = useState(0)
   const [factIdx, setFactIdx] = useState(0)
+  const [barProgress, setBarProgress] = useState(0)
+  const [secondsLeft, setSecondsLeft] = useState(Math.ceil(EXPECTED_MS / 1000))
+  const [seasonBars, setSeasonBars] = useState([34, 27, 48, 21])
   const startedRef = useRef(false)
   const { checkReport, dialog } = useReportCheck('loading_tabbar')
 
@@ -52,6 +63,30 @@ export default function LoadingPage() {
     const t2 = setTimeout(() => setActiveStep(2), VALIDATION_MS + AI_STEP_MS)
     return () => { clearTimeout(t1); clearTimeout(t2) }
   }, [!!state?.file]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 진행 바 + 카운트다운 타이머
+  useEffect(() => {
+    if (!state?.file) return
+    const origin = Date.now()
+    const id = setInterval(() => {
+      const elapsed = Date.now() - origin
+      const raw = Math.min(1, elapsed / EXPECTED_MS)
+      setBarProgress(Math.min(0.88, 1 - Math.pow(1 - raw, 0.55)))
+      setSecondsLeft(Math.max(0, Math.ceil((EXPECTED_MS - elapsed) / 1000)))
+    }, 500)
+    return () => clearInterval(id)
+  }, [!!state?.file]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 계절 타입 확률 바 랜덤 흔들기
+  useEffect(() => {
+    const id = setInterval(() => {
+      setSeasonBars(prev => prev.map(v => {
+        const d = (Math.random() - 0.45) * 14
+        return Math.min(88, Math.max(8, v + d))
+      }))
+    }, 700)
+    return () => clearInterval(id)
+  }, [])
 
   useEffect(() => {
     if (startedRef.current) return
@@ -66,6 +101,8 @@ export default function LoadingPage() {
     const formData = new FormData()
     formData.append('file', file)
     formData.append('gender', state?.gender ?? 'unisex')
+
+    trackEvent('loading_teaser_shown', { expected_seconds: EXPECTED_MS / 1000 })
 
     const startedAt = Date.now()
     const fetchPromise = fetch('/api/analysis/submit-photo', {
@@ -158,6 +195,12 @@ export default function LoadingPage() {
         </div>
         <h2 key={`h2-${activeStep}`}>{HERO_LABELS[activeStep].title}</h2>
         <p key={`p-${activeStep}`} className="ld-sub">{HERO_LABELS[activeStep].sub}</p>
+        <div className="ld-progress-wrap">
+          <div className="ld-progress-bar" style={{ width: `${Math.round(barProgress * 100)}%` }} />
+        </div>
+        <p className="ld-eta">
+          {secondsLeft > 0 ? `약 ${secondsLeft}초 남았어요` : '곧 완료돼요 ✦'}
+        </p>
       </section>
 
       <div className="ld-alist">
@@ -183,6 +226,22 @@ export default function LoadingPage() {
           })}
         </ul>
       </div>
+
+      <section className="ld-seasons">
+        <p className="ld-seasons-lab">— 어떤 타입이 나올까요? —</p>
+        <ul className="ld-seasons-list">
+          {SEASONS.map((s, i) => (
+            <li key={s.label} className="ld-season-row">
+              <span className="ld-sn">{s.label}</span>
+              <div className="ld-st">
+                <div className="ld-sf" style={{ width: `${Math.round(seasonBars[i])}%`, background: s.color }} />
+              </div>
+              <span className="ld-sp">{Math.round(seasonBars[i])}%</span>
+            </li>
+          ))}
+        </ul>
+        <p className="ld-seasons-note">AI가 분석하는 중이에요...</p>
+      </section>
 
       <section className="ld-fact">
         <h3>잠깐, 알고 계셨나요?</h3>
