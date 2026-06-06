@@ -32,8 +32,8 @@ export default function PrivacyPolicyPage() {
         </p>
 
         <div className="lg-meta-card">
-          <div className="lg-meta-row"><span>운영자</span><span>〇〇〇</span></div>
-          <div className="lg-meta-row"><span>문의</span><span>〇〇〇@〇〇〇.com</span></div>
+          <div className="lg-meta-row"><span>운영자</span><span>옥종훈</span></div>
+          <div className="lg-meta-row"><span>문의</span><span>style-fit@lu-bello.com</span></div>
         </div>
 
         <div className="lg-accordion">
@@ -187,7 +187,7 @@ export default function PrivacyPolicyPage() {
             <p className="lg-p">요청은 아래 문의처로 보내주시면 확인 후 합리적인 기간 내에 처리합니다.</p>
             <div className="lg-contact-card">
               <span className="lg-contact-label">문의</span>
-              <span className="lg-contact-value">〇〇〇@〇〇〇.com</span>
+              <span className="lg-contact-value">style-fit@lu-bello.com</span>
             </div>
           </AccordionSection>
 
@@ -198,8 +198,8 @@ export default function PrivacyPolicyPage() {
 
           <AccordionSection num="12" title="개인정보 보호 담당자">
             <div className="lg-meta-card">
-              <div className="lg-meta-row"><span>담당자</span><span>〇〇〇</span></div>
-              <div className="lg-meta-row"><span>이메일</span><span>〇〇〇@〇〇〇.com</span></div>
+              <div className="lg-meta-row"><span>담당자</span><span>옥종훈</span></div>
+              <div className="lg-meta-row"><span>이메일</span><span>style-fit@lu-bello.com</span></div>
               <div className="lg-meta-row"><span>처리 기간</span><span>문의 접수 후 가능한 한 빠르게 처리</span></div>
             </div>
           </AccordionSection>
