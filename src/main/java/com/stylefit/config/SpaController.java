@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.GetMapping;
  * 프론트의 React Router가 매칭되지 않는 경로는 NotFoundPage로 렌더링한다.
  *
  * - `/{path:[^.]+}` : 단일 세그먼트의 점 없는 경로만 매칭 (정적 리소스인 `.css`/`.js`/`.png`는 제외)
- * - `/api/**`, `/h2-console/**` 는 @RestController / 서블릿 매핑이 더 구체적이라 먼저 매칭됨
+ * - `/api/**` 는 @RestController / 서블릿 매핑이 더 구체적이라 먼저 매칭됨
  */
 @Controller
 public class SpaController {

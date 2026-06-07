@@ -19,7 +19,7 @@
 | 영역 | 기술 |
 |---|---|
 | 백엔드 | Spring Boot 3.4.0, Java 17, Gradle |
-| DB | H2 (개발 인메모리) / Postgres DDL 준비됨 (`ddl/schema-postgres.sql`) |
+| DB | PostgreSQL 14+ (`localhost:5432/stylefit`) / DDL: `ddl/schema-postgres.sql` |
 | 비전 | OpenCV 4.9.0 (openpnp) + YuNet ONNX (얼굴 탐지·사진 품질 검증) |
 | AI 분석 | 외부 Python 모듈 `POST /personal-color/analyze` (HTTP 연동) |
 | 프론트 | React 18, Vite 5, React Router 7 |
@@ -41,7 +41,7 @@ cd frontend && npm install && npm run dev
 ```
 
 - 모바일 동일 Wi-Fi 테스트: Vite `host: true` 설정됨 → `http://<PC_IP>:5173`
-- H2 콘솔: `/h2-console` (개발 전용, 운영 비활성)
+- DB: PostgreSQL (`localhost:5432/stylefit`, 계정 `ddalkkak`)
 - 환경 변수: `frontend/.env` (`.env.example` 참고) — `VITE_GA_ID`, `VITE_KAKAO_APP_KEY`
 
 ---
@@ -206,6 +206,9 @@ nohup java -jar StyleFit-0.0.1-SNAPSHOT.jar --spring.profiles.active=prod > nohu
 
 | 변수 | 용도 |
 |---|---|
+| `STYLEFIT_DB_URL` | PostgreSQL JDBC URL (기본 `jdbc:postgresql://localhost:5432/stylefit`) |
+| `STYLEFIT_DB_USERNAME` | DB 사용자 (기본 `ddalkkak`) |
+| `STYLEFIT_DB_PASSWORD` | DB 비밀번호 |
 | `STYLEFIT_ALLOWED_ORIGINS` | 운영 도메인 화이트리스트 (CSRF/CORS). 콤마 구분 |
 | `STYLEFIT_BASE_URL` | OG 태그·공유 링크 절대 URL (기본 `http://www.lu-bello.com:8080`) |
 | `STYLEFIT_TRUSTED_PROXIES` | Nginx 등 리버스 프록시 IP (XFF 신뢰) |
@@ -269,7 +272,8 @@ StyleFit/
   - ⚠ **공유 버튼은 OG 태그가 아닌 `content.imageUrl`(현재 mock 리포트 이미지)을 사용** → 미리보기가 OG 이미지와 다르게 뜸. 리포트 이미지 실연동(HTTPS) 전까지는 OG 이미지(`/og-image.png`) 사용 검토.
 
 **인프라**
-- [ ] Postgres 연결 + 영속 볼륨 (`schema-postgres.sql` 준비됨)
+- [x] Postgres 연결 완료 (개발: `localhost:5432/stylefit`)
+- [ ] 운영 서버 영속 볼륨 연결
 - [ ] HTTPS 적용 (쿠키 Secure 활성, 카카오 이미지 수집 정상화)
 
 **운영**
