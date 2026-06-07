@@ -59,9 +59,10 @@ public class ShareOgController {
                     meta[0] = color + " 퍼스널컬러 진단 결과 — StyleFit";
                     meta[1] = "AI가 분석한 " + color + " 타입의 컬러·코디 가이드를 확인해보세요.";
                 }
-                if (ar.getReportImagePath() != null) {
-                    meta[2] = baseUrl + "/report-images/" + ar.getReportImagePath();
-                }
+                // 리포트 이미지 실연동 전까지는 og-image.png 고정 사용
+                // if (ar.getReportImagePath() != null) {
+                //     meta[2] = baseUrl + "/report-images/" + ar.getReportImagePath();
+                // }
             });
 
         String html = buildHtml(meta[0], meta[1], meta[2], meta[3]);
