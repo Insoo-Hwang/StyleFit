@@ -707,11 +707,110 @@ cookie_id = "<uuid>_instagram"
 
 ---
 
-## 10. 디렉토리 트리 (요약)
+## 10. 배포 절차 (운영 서버)
+
+### 10.1 빌드 (로컬 Windows)
+
+```powershell
+# 1) 프론트엔드 빌드 → src/main/resources/static/ 에 번들 산출
+cd StyleFit\frontend
+npm run build
+
+# 2) Spring Boot 실행 가능 JAR 생성
+cd ..
+.\gradlew bootJar
+
+# 산출물 위치: build\libs\StyleFit-0.0.1-SNAPSHOT.jar
+```
+
+> `bootJar`는 프론트 static 번들도 함께 패키징한다. 프론트 변경 시 **npm run build → bootJar** 순서를 지킬 것.
+
+---
+
+### 10.2 서버로 전송 (SCP)
+
+```bash
+# Windows PowerShell 또는 Git Bash
+scp build/libs/StyleFit-0.0.1-SNAPSHOT.jar <USER>@lu-bello.com:/home/<USER>/stylefit/
+```
+
+서버에 `~/stylefit/` 디렉토리가 없으면 먼저 생성:
+
+```bash
+ssh <USER>@lu-bello.com "mkdir -p ~/stylefit"
+```
+
+---
+
+### 10.3 서버에서 nohup 실행
+
+```bash
+# SSH 접속
+ssh <USER>@lu-bello.com
+
+# 기존 프로세스 종료 (있을 경우)
+pkill -f "StyleFit-0.0.1-SNAPSHOT.jar"
+
+# nohup 백그라운드 실행
+cd ~/stylefit
+nohup java \
+  -DSTYLEFIT_BASE_URL=http://www.lu-bello.com:8080 \
+  -jar StyleFit-0.0.1-SNAPSHOT.jar \
+  > app.log 2>&1 &
+
+echo $!   # PID 확인 (나중에 종료할 때 필요)
+```
+
+- `app.log` — 실시간 로그 파일. `tail -f app.log`로 확인
+- `&` — 터미널 닫아도 계속 실행
+- `nohup` — SSH 세션 종료 시에도 프로세스 유지
+
+---
+
+### 10.4 실행 확인
+
+```bash
+# 포트 8080에 프로세스 떠 있는지 확인
+ss -tlnp | grep 8080
+# 또는
+curl -s http://localhost:8080 | head -5
+
+# 로그 실시간 추적
+tail -f ~/stylefit/app.log
+```
+
+---
+
+### 10.5 재시작 / 종료
+
+```bash
+# PID로 종료
+kill $(pgrep -f "StyleFit-0.0.1-SNAPSHOT.jar")
+
+# 또는 강제 종료
+pkill -9 -f "StyleFit-0.0.1-SNAPSHOT.jar"
+```
+
+---
+
+### 10.6 report-images / face-images 디렉토리
+
+앱 실행 디렉토리에 없으면 자동 생성된다. 재배포 시 기존 파일을 덮어쓰지 않도록 주의:
+
+```bash
+# JAR만 교체하고 데이터 디렉토리는 유지
+scp build/libs/StyleFit-0.0.1-SNAPSHOT.jar <USER>@lu-bello.com:~/stylefit/
+# → report-images/ face-images/ 는 건드리지 않음
+```
+
+---
+
+## 11. 디렉토리 트리 (요약)
 
 ```
 StyleFit/
 ├── build.gradle
+├── build/libs/StyleFit-0.0.1-SNAPSHOT.jar   # bootJar 산출물
 ├── src/main/
 │   ├── java/com/stylefit/        # 백엔드 소스
 │   └── resources/

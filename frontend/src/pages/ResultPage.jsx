@@ -146,39 +146,45 @@ export default function ResultPage() {
   const best = r.bestColors ?? []
   const worst = r.worstColors ?? []
 
+  // 이미지가 없을 때 생성 API를 호출하는 공통 함수
+  // handlePurchaseYes(Stage 1 → 2)와 handlePurchaseOpen(Stage 2 직접 진입) 양쪽에서 사용
+  const fetchReportImageIfNeeded = async () => {
+    if (reportImageUrl) return
+    setReportGenerating(true)
+    try {
+      const res = await fetch('/api/analysis/report-image', { method: 'POST' })
+      if (res.status === 429) {
+        trackEvent('rate_limit_blocked', { location: 'report_image' })
+        alert('오늘 리포트 생성 한도에 도달했어요. 내일 다시 시도해주세요.')
+      } else if (res.ok) {
+        const body = await res.json()
+        setReportImageUrl(body.reportImageUrl ?? null)
+        trackEvent('report_image_resolved', { source: body.cached ? 'cached' : 'generated' })
+      } else {
+        trackEvent('report_image_resolved', { source: 'error', status: res.status })
+      }
+    } catch {
+      trackEvent('report_image_resolved', { source: 'network_error' })
+    } finally {
+      setReportGenerating(false)
+    }
+  }
+
   const handlePurchaseOpen = async () => {
     trackEvent('purchase_dialog_open')
-    try {
-      await fetch('/api/purchase-intent/open', { method: 'POST' })
-    } catch {
-      // 서버 기록 실패해도 UX는 그대로 진행 (다이얼로그 노출)
-    }
+    fetch('/api/purchase-intent/open', { method: 'POST' }).catch(() => {})
     setPurchaseOpen(true)
+    // Stage 2로 직접 진입하는 경우(이전에 "예"를 눌렀지만 이미지 생성 실패)에도 재시도
+    if (hasViewedReport && !reportImageUrl) {
+      fetchReportImageIfNeeded()
+    }
   }
 
   const handlePurchaseYes = async () => {
     trackEvent('purchase_choice', { choice: 'yes' })
     setHasViewedReport(true)
-    try {
-      await fetch('/api/purchase-intent/yes', { method: 'POST' })
-    } catch {}
-    if (!reportImageUrl) {
-      setReportGenerating(true)
-      try {
-        const res = await fetch('/api/analysis/report-image', { method: 'POST' })
-        if (res.status === 429) {
-          trackEvent('rate_limit_blocked', { location: 'report_image' })
-          alert('오늘 리포트 생성 한도에 도달했어요. 내일 다시 시도해주세요.')
-        } else if (res.ok) {
-          const body = await res.json()
-          setReportImageUrl(body.reportImageUrl)
-          trackEvent('report_image_resolved', { source: body.cached ? 'cached' : 'generated' })
-        }
-      } catch {}
-      finally {
-        setReportGenerating(false)
-      }
-    }
+    fetch('/api/purchase-intent/yes', { method: 'POST' }).catch(() => {})
+    await fetchReportImageIfNeeded()
   }
 
   const handlePurchaseClose = (stage) => {
@@ -194,9 +200,20 @@ export default function ResultPage() {
     trackEvent('report_download_click', { location: 'purchase_dialog_stage2' })
     setReportDownloading(true)
     try {
-      const res = await fetch(url, { mode: 'cors' })
-      if (!res.ok) throw new Error('fetch_failed')
-      const blob = await res.blob()
+      let blob
+      if (url.startsWith('data:')) {
+        // data URI → base64 디코딩해서 Blob 생성
+        const [meta, b64] = url.split(',')
+        const mime = meta.split(':')[1]?.split(';')[0] ?? 'image/png'
+        const binary = atob(b64)
+        const bytes = new Uint8Array(binary.length)
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+        blob = new Blob([bytes], { type: mime })
+      } else {
+        const res = await fetch(url, { mode: 'cors' })
+        if (!res.ok) throw new Error('fetch_failed')
+        blob = await res.blob()
+      }
       const ext = (blob.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg')
       const objectUrl = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -208,7 +225,7 @@ export default function ResultPage() {
       URL.revokeObjectURL(objectUrl)
       trackEvent('report_download_success', { size_kb: Math.round(blob.size / 1024) })
     } catch {
-      // CORS 등으로 blob 받기가 실패하면 새 탭으로 폴백 — 사용자가 직접 저장
+      // CORS 등으로 실패하면 새 탭으로 폴백 — 사용자가 직접 저장
       trackEvent('report_download_failed', { reason: 'fetch_or_cors' })
       window.open(url, '_blank', 'noopener,noreferrer')
     } finally {

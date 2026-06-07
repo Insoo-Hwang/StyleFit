@@ -69,7 +69,7 @@ CREATE TRIGGER trg_satisfaction_survey_updated_at
 -- 한 쿠키당 1건만 존재. 다이얼로그가 열릴 때마다 dialog_count++,
 -- "예" 누르면 last_choice='YES', "아니오"/그냥 닫기는 'NO'.
 CREATE TABLE purchase_intent (
-    cookie_id     VARCHAR(36)   PRIMARY KEY,
+    cookie_id     VARCHAR(100)  PRIMARY KEY,
     last_choice   VARCHAR(10)   NOT NULL DEFAULT 'NO',
     dialog_count  INTEGER       NOT NULL DEFAULT 0,
     created_at    TIMESTAMP     NOT NULL DEFAULT NOW(),
@@ -89,7 +89,7 @@ CREATE TRIGGER trg_purchase_intent_updated_at
 -- GA로도 동일 이벤트를 보내지만, 홈 디버그 박스에서 즉시 확인하기 위해 DB에도 적재.
 -- 한 쿠키당 1행, 새 이벤트 들어올 때마다 upsert로 필드 갱신.
 CREATE TABLE user_behavior (
-    cookie_id             VARCHAR(36)  PRIMARY KEY,
+    cookie_id             VARCHAR(100) PRIMARY KEY,
     max_scroll_section    VARCHAR(30),                  -- 결과 페이지 최대 도달 섹션 이름
     max_scroll_index      SMALLINT,                     -- 0~9 (섹션 순서 인덱스, 최대값 보존)
     last_photo_dwell_ms   INTEGER,                      -- 마지막 진단의 사진 첨부→제출 ms

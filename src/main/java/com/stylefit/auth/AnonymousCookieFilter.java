@@ -43,9 +43,13 @@ public class AnonymousCookieFilter extends OncePerRequestFilter {
         String userId = extractCookie(request);
 
         // 기존 쿠키가 있으면 ref 포함 여부와 상관없이 절대 재발급하지 않는다.
-        // ref 는 최초 발급 시 1회만 포함되며 이후 X-Ref 헤더가 와도 무시한다.
+        // ref 는 최초 발급 시 1회만 포함되며 이후 X-Ref 헤더/?ref= 파라미터가 와도 무시한다.
         if (userId == null) {
+            // X-Ref 헤더(JS fetch 인터셉터) → ?ref= 쿼리 파라미터(최초 페이지 로드) 순으로 시도.
+            // 최초 HTML 요청 시점에는 JS가 아직 실행되지 않아 X-Ref 헤더가 없으므로
+            // 쿼리 파라미터를 직접 읽어야 신규 사용자의 ref가 쿠키에 포함된다.
             String ref = sanitizeRef(request.getHeader("X-Ref"));
+            if (ref == null) ref = sanitizeRef(request.getParameter("ref"));
             String base = UUID.randomUUID().toString();
             userId = (ref != null) ? base + "_" + ref : base;
             boolean secure = resolveSecure(request);
@@ -53,7 +57,7 @@ public class AnonymousCookieFilter extends OncePerRequestFilter {
                     .httpOnly(true)
                     .path("/")
                     .maxAge(MAX_AGE_SECONDS)
-                    .sameSite("Strict")
+                    .sameSite("Lax")
                     .secure(secure)
                     .build();
             response.addHeader("Set-Cookie", cookie.toString());

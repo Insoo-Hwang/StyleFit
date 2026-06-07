@@ -226,8 +226,14 @@ public class AnalysisService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "분석이 완료되지 않았습니다.");
         }
 
+        log.info("[REPORT-IMAGE] cookieId={} reportImagePath={} rawResultJson={}",
+                cookieId,
+                entity.getReportImagePath(),
+                entity.getRawResultJson() == null ? "null" : entity.getRawResultJson().length() + "chars");
+
         // 이미 생성된 이미지가 있으면 카운터 소모 없이 캐시 반환
         if (entity.getReportImagePath() != null) {
+            log.info("[REPORT-IMAGE] cache hit — {}", entity.getReportImagePath());
             Map<String, Object> cached = new java.util.HashMap<>();
             cached.put("reportImageUrl", REPORT_URL_PREFIX + entity.getReportImagePath());
             cached.put("cached", true);
@@ -237,6 +243,7 @@ public class AnalysisService {
         // 일일 호출 한도는 AI 리포트 이미지를 실제로 생성하는 시점에만 소모
         try {
             if (!rateLimitService.tryConsume(cookieId, clientIp)) {
+                log.warn("[REPORT-IMAGE] rate limit exceeded for cookieId={}", cookieId);
                 throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS, "오늘 리포트 생성 한도에 도달했어요.");
             }
         } catch (RateLimitService.RateLimitExceededException e) {
@@ -244,17 +251,31 @@ public class AnalysisService {
         }
 
         if (entity.getRawResultJson() == null) {
+            log.warn("[REPORT-IMAGE] rawResultJson is null — cookieId={} status={}", cookieId, entity.getStatus());
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
                     "이 분석 결과는 리포트 이미지 생성을 지원하지 않습니다. 사진을 다시 업로드해주세요.");
         }
         String faceAbsPath = Paths.get(faceStorageDir).toAbsolutePath().resolve(entity.getFaceImagePath()).toString();
         String reportResult = callAiReportGenerator(faceAbsPath, entity.getRawResultJson());
+        log.info("callAiReportGenerator result length={}", reportResult == null ? "null" : reportResult.length());
+
         String storedFilename = storeReportImageResult(reportResult);
 
         entity.setReportImagePath(storedFilename);
         repository.save(entity);
 
-        String responseUrl = (storedFilename != null) ? REPORT_URL_PREFIX + storedFilename : reportResult;
+        // 파일 저장 성공 → 정적 URL / 저장 실패 + base64 → data URI 직접 반환 / 그 외 → null
+        String responseUrl;
+        if (storedFilename != null) {
+            responseUrl = REPORT_URL_PREFIX + storedFilename;
+        } else if (reportResult != null && reportResult.length() > 500) {
+            // base64 디스크 저장 실패 → data URI로 직접 전달 (브라우저에서 표시·다운로드 가능)
+            responseUrl = reportResult.startsWith("data:") ? reportResult : "data:image/png;base64," + reportResult;
+            log.warn("report image disk save failed, falling back to data URI ({} chars)", reportResult.length());
+        } else {
+            responseUrl = reportResult;
+        }
+
         Map<String, Object> result = new java.util.HashMap<>();
         result.put("reportImageUrl", responseUrl);
         result.put("cached", false);
@@ -316,8 +337,10 @@ public class AnalysisService {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "multipart 빌드 오류");
         }
 
-        log.info("AI call — image_file={}, size={}bytes, gender={}", filename, imageBytes.length, gender);
+        log.info("[AI-ANALYZE] → {} | file={} size={}B gender={}",
+                aiBaseUrl + "/personal-color/analyze", filename, imageBytes.length, gender);
 
+        long startMs = System.currentTimeMillis();
         String rawJson;
         try {
             URL url = new URL(aiBaseUrl + "/personal-color/analyze");
@@ -334,25 +357,28 @@ public class AnalysisService {
             }
 
             int status = conn.getResponseCode();
+            log.info("[AI-ANALYZE] ← HTTP {} ({}ms)", status, System.currentTimeMillis() - startMs);
+
             if (status == 422) {
                 InputStream err = conn.getErrorStream();
                 String body = err != null ? new String(err.readAllBytes(), StandardCharsets.UTF_8) : "";
-                log.warn("AI module 422 — image not processable: {}", body);
+                log.warn("[AI-ANALYZE] 422 image not processable: {}", body);
                 return null;
             }
             if (status >= 400) {
                 InputStream err = conn.getErrorStream();
                 String body = err != null ? new String(err.readAllBytes(), StandardCharsets.UTF_8) : "";
-                log.error("AI module error {}: {}", status, body);
+                log.error("[AI-ANALYZE] error {}: {}", status, body);
                 throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "AI 분석 중 오류가 발생했습니다.");
             }
 
             rawJson = new String(conn.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+            log.info("[AI-ANALYZE] OK — response {} chars", rawJson.length());
 
         } catch (ResponseStatusException e) {
             throw e;
         } catch (IOException e) {
-            log.error("AI module call failed: {}", e.getMessage());
+            log.error("[AI-ANALYZE] connection failed ({}ms): {}", System.currentTimeMillis() - startMs, e.getMessage());
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "AI 서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.");
         }
 
@@ -360,6 +386,8 @@ public class AnalysisService {
     }
 
     private String callAiReportGenerator(String faceAbsPath, String rawResultJson) {
+        log.info("[AI-REPORT] → {} | face={}", aiBaseUrl + "/personal-color/report/full", faceAbsPath);
+        long startMs = System.currentTimeMillis();
         try {
             JsonNode rawNode = objectMapper.readTree(rawResultJson);
             ObjectNode body = objectMapper.createObjectNode();
@@ -381,17 +409,27 @@ public class AnalysisService {
             }
 
             int status = conn.getResponseCode();
+            log.info("[AI-REPORT] ← HTTP {} ({}ms)", status, System.currentTimeMillis() - startMs);
+
             if (status == 200) {
                 String resp = new String(conn.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-                return objectMapper.readTree(resp).path("report_image").asText(null);
+                String reportImage = objectMapper.readTree(resp).path("report_image").asText(null);
+                if (reportImage == null) {
+                    log.warn("[AI-REPORT] report_image field missing in response");
+                } else {
+                    log.info("[AI-REPORT] report_image received — {} chars, starts={}",
+                            reportImage.length(),
+                            reportImage.substring(0, Math.min(40, reportImage.length())));
+                }
+                return reportImage;
             }
             InputStream err = conn.getErrorStream();
             String errBody = err != null ? new String(err.readAllBytes(), StandardCharsets.UTF_8) : "";
-            log.error("AI report generator error {}: {}", status, errBody);
+            log.error("[AI-REPORT] error {}: {}", status, errBody);
             return null;
 
         } catch (Exception e) {
-            log.error("callAiReportGenerator failed: {}", e.getMessage());
+            log.error("[AI-REPORT] failed ({}ms): {}", System.currentTimeMillis() - startMs, e.getMessage());
             return null;
         }
     }
@@ -618,13 +656,23 @@ public class AnalysisService {
 
     /**
      * AI 리포트 이미지 결과를 report-images 디렉토리에 저장.
-     * - 파일 경로(AI와 같은 머신)면 Files.copy로 직접 복사
-     * - http(s):// URL이면 downloadAndStoreReportImage로 다운로드
+     * - data:image/...;base64,... 형식 → base64 디코딩 후 저장
+     * - 500자 초과 문자열 → raw base64로 간주해 디코딩 후 저장
+     * - http(s):// URL → downloadAndStoreReportImage로 다운로드
+     * - 그 외 → 파일 경로로 간주해 Files.copy
      */
     private String storeReportImageResult(String reportResult) {
         if (reportResult == null) return null;
+        if (reportResult.startsWith("data:")) {
+            return storeBase64ReportImage(reportResult);
+        }
         if (reportResult.startsWith("http://") || reportResult.startsWith("https://")) {
             return downloadAndStoreReportImage(reportResult);
+        }
+        // raw base64 heuristic: 500자 초과이면 파일 경로가 아닌 base64로 간주
+        if (reportResult.length() > 500) {
+            log.info("treating long string ({} chars) as raw base64 image", reportResult.length());
+            return storeBase64ReportImage("data:image/png;base64," + reportResult);
         }
         try {
             Path src = Paths.get(reportResult);
@@ -641,6 +689,40 @@ public class AnalysisService {
             return filename;
         } catch (IOException e) {
             log.warn("storeReportImageResult failed: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * base64 데이터(data URI 또는 raw base64)를 디코딩해 report-images 디렉토리에 저장한다.
+     */
+    private String storeBase64ReportImage(String dataUri) {
+        try {
+            String ext = "png";
+            String base64Data = dataUri;
+            if (dataUri.startsWith("data:")) {
+                int semicolon = dataUri.indexOf(';');
+                if (semicolon > 5) {
+                    ext = pickExtension(dataUri.substring(5, semicolon));
+                }
+                int comma = dataUri.indexOf(',');
+                if (comma < 0) {
+                    log.warn("invalid base64 data URI: missing comma");
+                    return null;
+                }
+                base64Data = dataUri.substring(comma + 1).trim();
+            }
+            // AI 서버가 개행·공백을 포함한 base64를 반환하는 경우 대비
+            base64Data = base64Data.replaceAll("\\s+", "");
+            byte[] imageBytes = java.util.Base64.getDecoder().decode(base64Data);
+            String filename = UUID.randomUUID() + "." + ext;
+            Path dir = Paths.get(reportStorageDir).toAbsolutePath();
+            Files.createDirectories(dir);
+            Files.write(dir.resolve(filename), imageBytes);
+            log.info("report image stored from base64: {} ({} bytes)", filename, imageBytes.length);
+            return filename;
+        } catch (Exception e) {
+            log.warn("storeBase64ReportImage failed: {}", e.getMessage());
             return null;
         }
     }

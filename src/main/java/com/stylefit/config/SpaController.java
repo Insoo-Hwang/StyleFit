@@ -20,7 +20,6 @@ public class SpaController {
             "/result",
             "/notfound",
             "/{path:[^.]+}",
-            "/share/{token:[^.]+}",
             "/compare/{token:[^.]+}",
             "/admin",
             "/admin/ban"
