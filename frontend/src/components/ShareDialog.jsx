@@ -67,14 +67,14 @@ export default function ShareDialog({ open, shareUrl, reportImageUrl, personalCo
       window.Kakao.Share.sendDefault({
         objectType: 'feed',
         content: {
-          title: `내 퍼스널 컬러 — ${personalColor || '진단 결과'}`,
-          description: '사진 한 장으로 확인한 나만의 컬러 · 코디 가이드',
+          title: 'AI한테 퍼스널컬러 진단받아봤는데 너무 신기해 👀',
+          description: '사진 한 장으로 내 컬러·코디 타입 분석. 너는 무슨 타입일까?',
           ...(toAbsUrl(reportImageUrl) ? { imageUrl: toAbsUrl(reportImageUrl) } : {}),
           link: shareLink,
         },
         buttons: [
-          { title: '결과 보기', link: shareLink },
-          { title: '나도 진단받기', link: { mobileWebUrl: appOriginPath('/'), webUrl: appOriginPath('/') } },
+          { title: '친구 결과 보기', link: shareLink },
+          { title: '나도 해보기', link: { mobileWebUrl: appOriginPath('/'), webUrl: appOriginPath('/') } },
         ],
       })
     } catch {

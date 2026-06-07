@@ -62,7 +62,7 @@ public class OgImageController {
             // 도메인
             g.setColor(new Color(0x77, 0x99, 0x77));
             g.setFont(new Font("SansSerif", Font.PLAIN, 30));
-            g.drawString("lu-bello.com", 130, 470);
+            g.drawString("style-fit.lu-bello.com", 130, 470);
 
             // 우측 장식 원
             g.setColor(new Color(0x2a, 0x45, 0x30));
