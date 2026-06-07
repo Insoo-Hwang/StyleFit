@@ -31,8 +31,8 @@ export default function TermsOfServicePage() {
         </p>
 
         <div className="lg-meta-card">
-          <div className="lg-meta-row"><span>운영자</span><span>〇〇〇</span></div>
-          <div className="lg-meta-row"><span>문의</span><span>〇〇〇@〇〇〇.com</span></div>
+          <div className="lg-meta-row"><span>운영자</span><span>옥종훈</span></div>
+          <div className="lg-meta-row"><span>문의</span><span>style-fit@lu-bello.com</span></div>
         </div>
 
         <div className="lg-accordion">

@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom'
 import App from './App.jsx'
 import './App.css'
 import { initGA, initRef, getRef } from './analytics'
+import { APP_BASE, withAppBase } from './paths'
 
 initGA()
 initRef()
@@ -14,16 +15,17 @@ initRef()
   const orig = window.fetch
   window.fetch = (url, opts = {}) => {
     const ref = getRef()
-    if (!ref) return orig(url, opts)
+    const nextUrl = typeof url === 'string' ? withAppBase(url) : url
+    if (!ref) return orig(nextUrl, opts)
     const headers = new Headers(opts.headers || {})
     if (!headers.has('X-Ref')) headers.set('X-Ref', ref)
-    return orig(url, { ...opts, headers })
+    return orig(nextUrl, { ...opts, headers })
   }
 })()
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <BrowserRouter>
+    <BrowserRouter basename={APP_BASE || undefined}>
       <App />
     </BrowserRouter>
   </StrictMode>

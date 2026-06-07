@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { trackEvent } from '../analytics'
+import { appOriginPath } from '../paths'
 import './ShareDialog.css'
 
 let kakaoReady = null
@@ -21,7 +22,7 @@ async function initKakao(appKey) {
 }
 
 const toAbsUrl = (url) =>
-  url ? (url.startsWith('http') ? url : `${window.location.origin}${url}`) : null
+  url ? (url.startsWith('http') ? url : appOriginPath(url)) : null
 
 export default function ShareDialog({ open, shareUrl, reportImageUrl, personalColor, onClose }) {
   const [urlCopied, setUrlCopied] = useState(false)
@@ -73,7 +74,7 @@ export default function ShareDialog({ open, shareUrl, reportImageUrl, personalCo
         },
         buttons: [
           { title: '결과 보기', link: shareLink },
-          { title: '나도 진단받기', link: { mobileWebUrl: window.location.origin, webUrl: window.location.origin } },
+          { title: '나도 진단받기', link: { mobileWebUrl: appOriginPath('/'), webUrl: appOriginPath('/') } },
         ],
       })
     } catch {

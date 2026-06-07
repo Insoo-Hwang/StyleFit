@@ -4,6 +4,7 @@ import SatisfactionDialog from '../components/SatisfactionDialog.jsx'
 import PurchaseIntentDialog from '../components/PurchaseIntentDialog.jsx'
 import ShareDialog from '../components/ShareDialog.jsx'
 import { trackEvent, getRef } from '../analytics'
+import { appOriginPath, withAppBase } from '../paths'
 import './ResultPage.css'
 
 function parseResult(raw) {
@@ -195,7 +196,7 @@ export default function ResultPage() {
   }
 
   const handleReportDownload = async () => {
-    const url = reportImageUrl
+    const url = withAppBase(reportImageUrl)
     if (!url || reportDownloading) return
     trackEvent('report_download_click', { location: 'purchase_dialog_stage2' })
     setReportDownloading(true)
@@ -327,15 +328,15 @@ export default function ResultPage() {
       {shareToken && (
         <ShareDialog
           open={shareDialogOpen}
-          shareUrl={`${window.location.origin}/share/${shareToken}?ref=${getRef() ? `${getRef()}_share` : 'share'}`}
-          reportImageUrl={reportImageUrl}
+          shareUrl={appOriginPath(`/share/${shareToken}?ref=${getRef() ? `${getRef()}_share` : 'share'}`)}
+          reportImageUrl={withAppBase(reportImageUrl)}
           personalColor={r.personalColor}
           onClose={() => setShareDialogOpen(false)}
         />
       )}
       <PurchaseIntentDialog
         open={purchaseOpen}
-        imageUrl={reportImageUrl}
+        imageUrl={withAppBase(reportImageUrl)}
         onClose={handlePurchaseClose}
         onYes={handlePurchaseYes}
         onDownload={handleReportDownload}
