@@ -240,6 +240,19 @@
 .rp-btn-act.ghost { background: transparent; color: var(--green-darker); border: 1.5px solid var(--green-darker); }
 .rp-btn-act svg { width: 16px; height: 16px; }
 
+/* DELETE RESULT — 눈에 띄지 않는 위험 동작(외곽선만) */
+.rp-delete { margin: 22px 22px 0; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.rp-delete-btn {
+  width: 100%; height: 44px; border-radius: 6px;
+  background: transparent; color: #a04040;
+  border: 1.3px dashed #c98a8a;
+  font-weight: 700; font-size: 13px; letter-spacing: -0.01em;
+  cursor: pointer; transition: background 120ms, color 120ms;
+}
+.rp-delete-btn:hover:not(:disabled) { background: #fbeaea; color: #8a2f2f; }
+.rp-delete-btn:disabled { opacity: 0.55; cursor: default; }
+.rp-delete-note { margin: 0; font-size: 11px; color: var(--green-mid); }
+
 /* TABBAR */
 .rp-tabbar { position: fixed; left: 0; right: 0; bottom: 0; display: flex; justify-content: center; z-index: 20; }
 .rp-tabbar-inner {

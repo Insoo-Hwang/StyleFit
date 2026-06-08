@@ -51,4 +51,13 @@ public class AnalysisResponse {
                 .validationWarnings(warnings)
                 .build();
     }
+
+    /** 인당 진단 횟수 한도 도달 — 더 이상 새로 진단할 수 없음. */
+    public static AnalysisResponse limitExceeded(int maxCount) {
+        return builder()
+                .status("LIMIT_EXCEEDED")
+                .validationWarnings(List.of(
+                        "진단은 최대 " + maxCount + "회까지 받을 수 있어요. 더 이상 새로 진단할 수 없습니다."))
+                .build();
+    }
 }

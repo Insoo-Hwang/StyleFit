@@ -1,6 +1,6 @@
 # StyleFit
 
-> AI 퍼스널컬러 진단 모바일 웹앱 · 최종 정리: 2026-06-07
+> AI 퍼스널컬러 진단 모바일 웹앱 · 최종 정리: 2026-06-08
 
 사진 한 장을 업로드하면 AI가 퍼스널컬러(봄웜·여름쿨·가을웜·겨울쿨)를 분석해
 **컬러 · 코디 추천 리포트**를 보여주는 모바일 우선 웹앱. 로그인 없이 **익명 쿠키** 기반으로 동작한다.
@@ -52,7 +52,7 @@ cd frontend && npm install && npm run dev
 
 | 패키지 | 역할 | 주요 엔드포인트 |
 |---|---|---|
-| `analysis` | 진단 오케스트레이션(검증→AI호출→저장) | `POST /api/analysis/start`, `/submit-photo` |
+| `analysis` | 진단 오케스트레이션(검증→AI호출→저장) | `POST /api/analysis/start`, `/submit-photo`, `DELETE /api/analysis/result` |
 | `vision` | YuNet 얼굴 탐지 + 밝기 기반 사진 품질 검증 | — (analysis 내부 + 별도 검증 엔드포인트) |
 | `share` | 공유 토큰 + 동적 OG 메타 태그 + OG 이미지 생성 | `POST /api/share/create`, `GET /share/{token}`, `/og-image.png` |
 | `survey` | 리포트 만족도 평가 (별점·성별·코멘트) | `GET·POST /api/survey/satisfaction` |
@@ -61,7 +61,8 @@ cd frontend && npm install && npm run dev
 | `auth` | `AnonymousCookieFilter` — `stylefit_uid` 쿠키 자동 발급/검증 | (모든 요청) |
 | `ban` | 악성 사용자 쿠키/IP 차단 | `GET /api/ban/check` (+ `/api/analysis/**` 가드) |
 | `ratelimit` | 일일 AI 호출 한도 (글로벌·쿠키별·IP별) | (analysis 내부 소비) |
-| `admin` | 어드민 대시보드 통계 + 차단 관리 | `GET /api/admin/stats/*` |
+| `settings` | 런타임 운영 설정(`app_setting`) — DB 우선, 없으면 properties 기본값 | (admin이 변경) |
+| `admin` | 어드민 대시보드 통계 + 차단 관리 + 설정 변경 | `GET /api/admin/stats/*`, `GET·PUT /api/admin/settings` |
 | `product` | 메뉴/상품 메타 | `GET /api/products` |
 | `config` | 보안/CORS/정적리소스/SPA 폴백/OpenCV 설정 | — |
 
@@ -95,7 +96,9 @@ cd frontend && npm install && npm run dev
 | `/admin`, `/admin/ban` | AdminPage 등 | 어드민 대시보드 / 차단 관리 |
 | `*` | NotFoundPage | 404 |
 
-공용: `ScrollToTop`, `AnalyticsTracker`(GA page_view), `useReportCheck`(탭바 "내 리포트"), 다이얼로그들(`NoReport`/`Satisfaction`/`PurchaseIntent`/`Share`).
+공용: `ScrollToTop`, `AnalyticsTracker`(GA page_view), `useReportCheck`(탭바 "내 리포트"), 다이얼로그들(`NoReport`/`PurchaseIntent`/`Share`).
+
+> `SatisfactionDialog`는 현재 미사용. N°05 만족도 버튼 클릭 시 외부 Google Forms(`https://forms.gle/Swor6oKmju8QHT9q9`)로 새 탭 이동. 이미지 리포트 다이얼로그(PurchaseIntentDialog Stage 2)에도 동일 링크 배너가 항상 표시된다.
 
 ### 디자인 시스템
 - `oklch()` 그린 팔레트 + 골드(`#e7d8a8`) 포인트, 종이톤 카드, 점선 보더
@@ -107,7 +110,11 @@ cd frontend && npm install && npm run dev
 ## 4. 인증 · 유입 추적
 
 - **로그인 없음.** `AnonymousCookieFilter`가 모든 요청에 `stylefit_uid` 쿠키 발급 (HttpOnly, 30일, SameSite, HTTPS면 Secure).
-- **한 쿠키 + 한 상품 = 진단 1건** (DB unique 제약).
+- **한 쿠키 + 한 상품 = 활성 진단 1건** (DB unique 제약).
+- **인당 진단 횟수 한도**: 쿠키당 누적 진단 **최대 5회**(기본값 `stylefit.diagnosis.max-per-cookie`). `analysis_result.diagnosis_count` 컬럼에 완료 진단마다 +1.
+  - 결과 삭제는 행을 지우지 않고 결과만 비우는 **soft reset**(status=FAILED) — `diagnosis_count`는 보존되어 삭제→재진단으로 한도를 우회할 수 없다.
+  - 한도 도달 시 `submit-photo`가 `LIMIT_EXCEEDED` 반환 → 프론트 `/error`(reason=`diagnosis_limit`).
+- **런타임 설정 변경**: 일일 AI 호출 한도(`ratelimit.report-daily`)와 인당 진단 횟수 한도(`diagnosis.max-per-cookie`)는 **어드민 대시보드 "운영 설정"에서 변경** 가능. `app_setting` 테이블에 저장되어 재시작해도 유지되고, 행이 없으면 properties 기본값을 쓴다.
 - **유입 추적(ref)**: 링크에 `?ref=instagram` 등을 붙이면 sessionStorage→`X-Ref` 헤더→쿠키 발급 시 `<uuid>_instagram` 형태로 내장. 이후 모든 데이터의 `cookie_id`가 유입 채널을 내포한다.
   - ref 규칙: 영소문자/숫자/`-`/`_`, 20자 이내. **최초 1회만 기록**(쿠키 발급 후 변경 불가).
   - 공유 링크 유입은 `<ref>_share` suffix로 별도 추적.
@@ -136,6 +143,7 @@ cd frontend && npm install && npm run dev
 |---|---|---|
 | `cta_click` | `cta`, `location` | 홈 히어로/탭바 진단 CTA |
 | `photo_selected` / `photo_rejected_client` | `size_kb` / `reason` | 사진 첨부 성공/거부 |
+| `submit_blocked` | `reason` (gender_missing) | 분석 시작 클릭 시 필수값 미입력 |
 | `photo_replaced` / `photo_dwell_time` | `count` / `elapsed_ms` | 사진 교체·망설임 시간 |
 | `analysis_submitted` | `resized_kb`, `gender` | 분석 시도 (퍼널 핵심) |
 | `analysis_reused` | `source` | 캐시 결과 재사용 |
@@ -143,10 +151,11 @@ cd frontend && npm install && npm run dev
 | `analysis_failed` | `reason`, `elapsed_ms`, `attempt_no` | 분석 실패 |
 | `retry_clicked` | `reason`, `location` | 실패 후 재시도 |
 | `loading_teaser_shown` | `expected_seconds` | 로딩 티저 노출 |
-| `result_view` / `result_action` | `personal_color` / `action` | 결과 진입 / 만족도 버튼 |
+| `result_view` / `result_action` | `personal_color` / `action` (survey_click) | 결과 진입 / 만족도 버튼 (→ Google Forms 이동) |
+| `result_delete_click` / `result_delete_cancelled` | `location` | 결과 삭제 버튼 클릭 / 확인창 취소 |
+| `result_deleted` / `result_delete_failed` | `had_share_token` / `reason` | 결과 삭제 성공 / 실패 |
 | `result_scroll_depth` | `section`, `index` | 결과 섹션 50% 노출 |
 | `my_report_click` / `no_report_dialog_action` | `has_report` / `action` | 탭바 "내 리포트" 흐름 |
-| `survey_open` / `survey_submit` / `survey_submit_failed` | `is_edit`, `rating`, `gender`, `comment_length` | 만족도 평가 |
 | `purchase_dialog_open` / `purchase_choice` | `choice` (yes/no) | 결제 의향 (MVP 핵심) |
 | `report_download_click/success/failed` | `location`, `size_kb`, `reason` | 리포트 이미지 다운로드 |
 | `report_image_resolved` | `source` (generated/cached) | 리포트 이미지 캐시 적중률 |
@@ -154,7 +163,7 @@ cd frontend && npm install && npm run dev
 | `share_kakao_click` / `share_link_copied` | — | 카카오 공유 / URL 복사 |
 | `share_view` / `share_view_failed` | `personal_color`, `is_owner` / `reason` | 공유 페이지 진입 |
 | `share_diagnose_click` / `share_compare_click` / `share_compare_view` | `has_my_report`, `my_color`, `other_color` | 공유→진단·비교 전환 |
-| `ban_blocked` / `rate_limit_blocked` | `location`, `elapsed_ms` | 차단/한도 도달 |
+| `ban_blocked` / `rate_limit_blocked` / `diagnosis_limit_blocked` | `location`, `elapsed_ms` | 차단/일일 한도/인당 진단 횟수 한도 도달 |
 | `not_found_view` / `not_found_action` | `path_length` / `action` | 404 |
 
 ### 5.3 핵심 퍼널
@@ -279,6 +288,7 @@ StyleFit/
 **운영**
 - [ ] GA4 콘솔: `result_view`/`analysis_submitted` 전환 이벤트 지정 + 운영 도메인 등록 + 개인정보처리방침 GA 고지
 - [ ] 만족도/결제의향/행동신호 어드민 집계·export
+- [x] 개인정보 처리방침·이용약관 시행일: **2026년 6월 8일** 기재
 
 ---
 

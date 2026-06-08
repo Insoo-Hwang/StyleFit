@@ -126,6 +126,10 @@ export default function LoadingPage() {
       if (data.status === 'VALIDATION_FAILED') {
         return { kind: 'error', reason: 'validation_failed', warnings: data.validationWarnings ?? [] }
       }
+      if (data.status === 'LIMIT_EXCEEDED') {
+        // 인당 누적 진단 횟수 한도 도달 — 검증 실패가 아니므로 별도 reason
+        return { kind: 'error', reason: 'diagnosis_limit', warnings: data.validationWarnings ?? ['진단 횟수 한도에 도달했어요.'] }
+      }
       return { kind: 'error', reason: 'unknown', warnings: ['분석 중 오류가 발생했습니다.'] }
     }).catch(() => ({ kind: 'error', reason: 'network', warnings: ['서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.'] }))
 
@@ -138,8 +142,8 @@ export default function LoadingPage() {
           state: { result: result.result, reportImageUrl: result.reportImageUrl, reportImageCached: result.reportImageCached, gender: state?.gender ?? null },
         })
       } else {
-        // rate_limited / banned 는 검증 실패가 아니므로 failed_attempts 카운터는 올리지 않는다.
-        const isValidationFailure = result.reason !== 'rate_limited' && result.reason !== 'banned'
+        // rate_limited / banned / diagnosis_limit 는 검증 실패가 아니므로 failed_attempts 카운터는 올리지 않는다.
+        const isValidationFailure = result.reason !== 'rate_limited' && result.reason !== 'banned' && result.reason !== 'diagnosis_limit'
         if (isValidationFailure) {
           fetch('/api/user-behavior/analysis-failed', { method: 'POST' })
             .then(r => r.ok ? r.json() : null)
@@ -153,6 +157,8 @@ export default function LoadingPage() {
             })
         } else if (result.reason === 'rate_limited') {
           trackEvent('rate_limit_blocked', { location: 'analysis_submit', elapsed_ms })
+        } else if (result.reason === 'diagnosis_limit') {
+          trackEvent('diagnosis_limit_blocked', { location: 'analysis_submit', elapsed_ms })
         } else {
           // banned (백엔드 인터셉터가 막은 경우)
           trackEvent('ban_blocked', { location: 'analysis_submit' })

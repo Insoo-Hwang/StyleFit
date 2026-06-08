@@ -141,6 +141,10 @@
   background-image: repeating-linear-gradient(135deg, rgba(28,28,26,0.06) 0 1px, transparent 1px 8px);
 }
 .up-gphoto svg { position: relative; width: 42px; height: 42px; }
+.up-gphoto-img {
+  position: relative; z-index: 1;
+  width: 100%; height: 100%; object-fit: cover; display: block;
+}
 .up-gcard ul {
   margin: 0; padding-left: 14px;
   font-weight: 600; font-size: 12.5px; color: var(--ink);

@@ -5,6 +5,7 @@ import com.stylefit.ban.BanService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -60,5 +61,16 @@ public class AnalysisController {
         String cookieId = (String) request.getAttribute(AnonymousCookieFilter.REQUEST_ATTR);
         String clientIp = banService.extractClientIp(request);
         return ResponseEntity.ok(analysisService.generateReportImage(cookieId, clientIp));
+    }
+
+    /**
+     * 본인 진단 결과를 삭제한다. 삭제 후 같은 쿠키로 재진단이 가능해진다.
+     * 응답: { deleted: boolean } — 삭제 대상이 실제 존재했는지 여부.
+     */
+    @DeleteMapping("/result")
+    public ResponseEntity<Map<String, Object>> deleteResult(HttpServletRequest request) {
+        String cookieId = (String) request.getAttribute(AnonymousCookieFilter.REQUEST_ATTR);
+        boolean deleted = analysisService.deleteResult(cookieId);
+        return ResponseEntity.ok(Map.of("deleted", deleted));
     }
 }

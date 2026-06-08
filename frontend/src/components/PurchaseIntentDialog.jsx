@@ -3,6 +3,8 @@ import './PurchaseIntentDialog.css'
 
 // Stage 1: 결제 확인 (예/아니오)
 // Stage 2: 베타 무료 안내 + 리포트 이미지 (예 누르면 전환)
+const SURVEY_URL = 'https://forms.gle/Swor6oKmju8QHT9q9'
+
 export default function PurchaseIntentDialog({
   open,
   imageUrl,
@@ -11,8 +13,6 @@ export default function PurchaseIntentDialog({
   onDownload,
   downloading,
   imageLoading = false,  // "예" 클릭 후 AI 이미지 생성 중
-  surveyDone,     // null=미확인, false=미완료, true=완료
-  onSurveyClick,  // 만족도 다이얼로그 열기 콜백
   skipPayment = false,  // 이미지가 이미 있으면 결제 단계 건너뜀
 }) {
   const [stage, setStage] = useState(skipPayment ? 2 : 1)
@@ -62,17 +62,15 @@ export default function PurchaseIntentDialog({
             <h2 className="pid-title">베타 테스트 기간이라<br />무료로 제공됩니다!</h2>
             <p className="pid-sub">아래 리포트 이미지를 확인해주세요.</p>
 
-            {surveyDone === false && (
-              <div className="pid-survey-banner">
-                <div className="pid-survey-banner-text">
-                  <strong>만족도 평가</strong>를 아직 안 하셨어요!<br />
-                  <span>리포트가 도움이 됐다면 1분만 남겨주세요</span>
-                </div>
-                <button type="button" className="pid-survey-banner-btn" onClick={() => { closeWithStage(); onSurveyClick?.() }}>
-                  평가하기 →
-                </button>
+            <div className="pid-survey-banner">
+              <div className="pid-survey-banner-text">
+                <strong>만족도 조사</strong>에 참여해주세요!<br />
+                <span>1분이면 충분해요 — 서비스 개선에 큰 힘이 됩니다</span>
               </div>
-            )}
+              <button type="button" className="pid-survey-banner-btn" onClick={() => window.open(SURVEY_URL, '_blank', 'noopener,noreferrer')}>
+                참여하기 →
+              </button>
+            </div>
 
             <div className="pid-image-wrap">
               {imageLoading ? (

@@ -105,6 +105,18 @@ public class AdminController {
         return ResponseEntity.ok(statsService.listRecentUsers(safeLimit));
     }
 
+    /** 운영 설정 현재값 조회 — { reportDaily, maxDiagnosisPerCookie } */
+    @GetMapping("/settings")
+    public ResponseEntity<Map<String, Object>> getSettings() {
+        return ResponseEntity.ok(statsService.getSettings());
+    }
+
+    /** 운영 설정 변경 — body 에 포함된 키만 갱신. 변경 후 현재값 반환. */
+    @PutMapping("/settings")
+    public ResponseEntity<Map<String, Object>> updateSettings(@RequestBody Map<String, Object> body) {
+        return ResponseEntity.ok(statsService.updateSettings(body));
+    }
+
     /** 다중 차단. body: { items: [{cookieId?, ip?, reason?}, ...] } */
     @PostMapping("/ban")
     public ResponseEntity<Map<String, Object>> banMany(@RequestBody Map<String, Object> body) {

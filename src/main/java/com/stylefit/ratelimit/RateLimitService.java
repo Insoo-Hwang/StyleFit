@@ -1,5 +1,6 @@
 package com.stylefit.ratelimit;
 
+import com.stylefit.settings.SettingsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -14,12 +15,7 @@ public class RateLimitService {
 
     private final ApiCallQuotaRepository globalRepository;
     private final ActorQuotaRepository actorRepository;
-
-    /**
-     * 서버 전체 일일 한도. 기본 50회.
-     */
-    @Value("${stylefit.ratelimit.report-daily:50}")
-    private int dailyLimit;
+    private final SettingsService settingsService;
 
     /**
      * 쿠키(사용자) 일일 한도. 기본 5회.
@@ -36,7 +32,7 @@ public class RateLimitService {
     private int perIpDaily;
 
     public int getDailyLimit() {
-        return dailyLimit;
+        return settingsService.getReportDaily();
     }
 
     public int getPerCookieDaily() {
@@ -69,6 +65,7 @@ public class RateLimitService {
 
     private boolean tryConsumeGlobal() {
         LocalDate today = LocalDate.now();
+        int dailyLimit = settingsService.getReportDaily();
         Optional<ApiCallQuota> found = globalRepository.findById(today);
         if (found.isEmpty()) {
             globalRepository.save(ApiCallQuota.first(today));

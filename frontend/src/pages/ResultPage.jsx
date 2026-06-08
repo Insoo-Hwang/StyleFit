@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import SatisfactionDialog from '../components/SatisfactionDialog.jsx'
 import PurchaseIntentDialog from '../components/PurchaseIntentDialog.jsx'
 import ShareDialog from '../components/ShareDialog.jsx'
 import { trackEvent, getRef } from '../analytics'
@@ -15,12 +14,6 @@ function parseResult(raw) {
   return raw
 }
 
-function toSurveyGender(g) {
-  if (g === 'male') return 'MALE'
-  if (g === 'female') return 'FEMALE'
-  return null
-}
-
 function formatToday() {
   const d = new Date()
   const pad = (n) => String(n).padStart(2, '0')
@@ -32,14 +25,7 @@ export default function ResultPage() {
   const { state } = useLocation()
   const navigate = useNavigate()
   const [data, setData] = useState(() => state ? { ...state, result: parseResult(state.result) } : null)
-  const analysisGender = state?.gender ?? null
   const viewTrackedRef = useRef(false)
-
-  // 만족도 평가 다이얼로그 상태
-  const [surveyOpen, setSurveyOpen] = useState(false)
-  const [surveyInit, setSurveyInit] = useState({ rating: 0, gender: null, comment: '', isEdit: false })
-  const [surveySubmitting, setSurveySubmitting] = useState(false)
-  const [surveyDone, setSurveyDone] = useState(null)
 
   // 결제 의향 다이얼로그 상태
   const [purchaseOpen, setPurchaseOpen] = useState(false)
@@ -52,6 +38,9 @@ export default function ResultPage() {
   const [shareToken, setShareToken] = useState(null)
   const [shareBusy, setShareBusy] = useState(false)
   const [shareDialogOpen, setShareDialogOpen] = useState(false)
+
+  // 결과 삭제
+  const [deleting, setDeleting] = useState(false)
 
   // 스크롤 깊이 — 도달한 최대 인덱스만 갱신
   const maxScrollIndexRef = useRef(-1)
@@ -74,17 +63,6 @@ export default function ResultPage() {
       })
       .catch(() => navigate('/upload', { replace: true }))
   }, [])
-
-  // 결과 로딩 후 만족도 완료 여부 확인 — N°10 섹션 독려 문구 제어용
-  useEffect(() => {
-    if (!data) return
-    let alive = true
-    fetch('/api/survey/satisfaction')
-      .then(r => r.ok ? r.json() : null)
-      .then(b => { if (alive) setSurveyDone(b ? !!b.exists : false) })
-      .catch(() => {})
-    return () => { alive = false }
-  }, [data])
 
   // 결과 로딩 완료 시 1회 result_view 전송 (personalColor/mainType만 — 카테고리값)
   useEffect(() => {
@@ -265,66 +243,34 @@ export default function ResultPage() {
     return () => ac.abort()
   }, [])
 
-  const handleSurvey = async () => {
-    trackEvent('result_action', { action: 'survey_click' })
+  const handleDeleteResult = async () => {
+    if (deleting) return
+    trackEvent('result_delete_click', { location: 'result_bottom' })
+    const ok = window.confirm('진단 결과를 삭제할까요?\n삭제하면 복구할 수 없어요. 다시 진단하면 인당 진단 횟수(최대 5회)가 1회 소모됩니다.')
+    if (!ok) {
+      trackEvent('result_delete_cancelled', { location: 'result_bottom' })
+      return
+    }
+    setDeleting(true)
     try {
-      const res = await fetch('/api/survey/satisfaction')
-      const body = await res.json()
-      const isEdit = !!body.exists
-      const surveyGender = body.gender ?? toSurveyGender(analysisGender)
-      setSurveyInit({
-        rating: body.rating ?? 0,
-        gender: surveyGender,
-        comment: body.comment ?? '',
-        isEdit,
-      })
-      trackEvent('survey_open', { is_edit: isEdit })
-      setSurveyOpen(true)
+      const res = await fetch('/api/analysis/result', { method: 'DELETE' })
+      if (!res.ok) throw new Error('delete_failed')
+      trackEvent('result_deleted', { had_share_token: !!shareToken })
+      navigate('/upload', { replace: true })
     } catch {
-      setSurveyInit({ rating: 0, gender: null, comment: '', isEdit: false })
-      trackEvent('survey_open', { is_edit: false, error: true })
-      setSurveyOpen(true)
+      trackEvent('result_delete_failed', { reason: 'network' })
+      alert('결과 삭제에 실패했어요. 잠시 후 다시 시도해주세요.')
+      setDeleting(false)
     }
   }
 
-  const handleSurveySubmit = async ({ rating, gender, comment }) => {
-    if (surveySubmitting) return
-    setSurveySubmitting(true)
-    try {
-      const res = await fetch('/api/survey/satisfaction', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rating, gender, comment }),
-      })
-      if (!res.ok) throw new Error('save_failed')
-      trackEvent('survey_submit', {
-        rating,
-        gender,
-        comment_length: comment?.length ?? 0,
-        is_edit: surveyInit.isEdit,
-      })
-      setSurveyOpen(false)
-      setSurveyDone(true)
-    } catch {
-      trackEvent('survey_submit_failed', { rating, gender })
-      alert('저장에 실패했어요. 잠시 후 다시 시도해주세요.')
-    } finally {
-      setSurveySubmitting(false)
-    }
+  const handleSurvey = () => {
+    trackEvent('result_action', { action: 'survey_click' })
+    window.open('https://forms.gle/Swor6oKmju8QHT9q9', '_blank', 'noopener,noreferrer')
   }
 
   return (
     <div className="rp-frame" data-screen-label="Report">
-      <SatisfactionDialog
-        open={surveyOpen}
-        isEdit={surveyInit.isEdit}
-        initialRating={surveyInit.rating}
-        initialGender={surveyInit.gender}
-        initialComment={surveyInit.comment}
-        submitting={surveySubmitting}
-        onClose={() => !surveySubmitting && setSurveyOpen(false)}
-        onSubmit={handleSurveySubmit}
-      />
       {shareToken && (
         <ShareDialog
           open={shareDialogOpen}
@@ -342,8 +288,6 @@ export default function ResultPage() {
         onDownload={handleReportDownload}
         downloading={reportDownloading}
         imageLoading={reportGenerating}
-        surveyDone={surveyDone}
-        onSurveyClick={handleSurvey}
         skipPayment={!!reportImageUrl || hasViewedReport}
       />
       <header className="rp-topnav">
@@ -473,6 +417,19 @@ export default function ResultPage() {
           </svg>
           {reportImageUrl ? '이미지 리포트 보기' : '1,990원으로 이미지 리포트 받아보기'}
         </button>
+      </div>
+
+      {/* 결과 삭제 — 원하지 않으면 결과를 지우고 다시 진단 */}
+      <div className="rp-delete">
+        <button
+          type="button"
+          className="rp-delete-btn"
+          onClick={handleDeleteResult}
+          disabled={deleting}
+        >
+          {deleting ? '삭제하는 중…' : '결과 삭제하고 다시 진단하기'}
+        </button>
+        <p className="rp-delete-note">삭제하면 복구할 수 없어요</p>
       </div>
 
       <div style={{ height: 20 }} />

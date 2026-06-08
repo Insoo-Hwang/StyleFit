@@ -12,13 +12,18 @@ export default function ErrorPage() {
 
   const isRateLimited = reason === 'rate_limited'
   const isBanned = reason === 'banned'
-  const headerTitle = isRateLimited ? '오늘 한도 도달' : (isBanned ? '이용 제한' : '분석 실패')
-  const heading = isRateLimited ? '오늘 리포트 생성 한도에 도달했어요' : (isBanned ? '이용이 제한된 사용자입니다' : '분석에 실패했습니다')
+  const isDiagnosisLimit = reason === 'diagnosis_limit'
+  // 재시도해도 통과할 수 없는 케이스 — 재시도 CTA/팁을 숨긴다.
+  const isHardBlock = isRateLimited || isBanned || isDiagnosisLimit
+  const headerTitle = isRateLimited ? '오늘 한도 도달' : (isBanned ? '이용 제한' : (isDiagnosisLimit ? '진단 횟수 초과' : '분석 실패'))
+  const heading = isRateLimited ? '오늘 리포트 생성 한도에 도달했어요' : (isBanned ? '이용이 제한된 사용자입니다' : (isDiagnosisLimit ? '진단 가능 횟수를 모두 사용했어요' : '분석에 실패했습니다'))
   const subCopy = isRateLimited
     ? <>하루 최대 횟수까지 진단을 받으셨어요.<br />내일 다시 시도해주세요.</>
     : (isBanned
         ? <>현재 계정 또는 접속 환경에서는<br />사진 업로드를 이용할 수 없어요.</>
-        : <>사진 품질 문제로<br />분석을 완료하지 못했습니다.</>)
+        : (isDiagnosisLimit
+            ? <>{warnings[0] ?? '진단 횟수 한도에 도달했어요.'}</>
+            : <>사진 품질 문제로<br />분석을 완료하지 못했습니다.</>))
 
   const goRetry = (location) => {
     trackEvent('retry_clicked', { reason, location })
@@ -44,14 +49,14 @@ export default function ErrorPage() {
         <h2>{heading}</h2>
         <p className="er-sub">{subCopy}</p>
 
-        {!isRateLimited && !isBanned && warnings.length > 0 && (
+        {!isHardBlock && warnings.length > 0 && (
           <ul className="er-warnings">
             {warnings.map((w, i) => <li key={i}>{w}</li>)}
           </ul>
         )}
 
         <div className="er-actions">
-          {!isRateLimited && !isBanned && (
+          {!isHardBlock && (
             <button className="er-cta" type="button" onClick={() => goRetry('error_cta')}>
               다른 사진으로 다시 시도 <span className="er-cta-arrow">→</span>
             </button>
@@ -61,7 +66,7 @@ export default function ErrorPage() {
           </button>
         </div>
 
-        {!isRateLimited && !isBanned && (
+        {!isHardBlock && (
           <aside className="er-tip">
             <p className="er-tip-h">— a quick tip —</p>
             정면을 보고 찍은, 자연광에서의 사진이 가장 분석이 잘 됩니다. 선글라스·마스크·강한 보정은 피해주세요.

@@ -6,6 +6,9 @@ CREATE TABLE analysis_result (
     cookie_id          VARCHAR(100)    NOT NULL,
     product_code       VARCHAR(50)     NOT NULL DEFAULT 'PERSONAL_COLOR_DIAGNOSIS',
     status             VARCHAR(20)     NOT NULL DEFAULT 'PROCESSING',
+    -- 인당 누적 진단 횟수. 인당 진단 한도(기본 5회)의 기준값.
+    -- 결과 삭제(soft reset) 시에도 보존되어 삭제→재진단으로 한도를 우회할 수 없다.
+    diagnosis_count    INTEGER         NOT NULL DEFAULT 0,
     result_json        JSONB,
     -- 최초 분석 시 AI 리포트 모듈에서 받은 이미지를 ./report-images/ 에 저장하고
     -- 파일명만 여기에 보관한다. 다음 조회부터는 다시 다운로드하지 않고 이 파일을 재사용.
@@ -180,3 +183,19 @@ CREATE TABLE share_token (
 
 CREATE INDEX idx_share_token_cookie_id ON share_token (cookie_id);
 CREATE INDEX idx_share_token_active ON share_token (cookie_id) WHERE revoked_at IS NULL;
+
+
+-- =========================================================================
+-- 런타임 운영 설정 (어드민에서 변경)
+-- =========================================================================
+-- application.properties 의 값은 "기본값(seed)"으로만 쓰이고, 이 테이블에 행이 있으면 우선한다.
+-- 현재 관리 키: 'ratelimit.report-daily'(일일 AI 호출 한도), 'diagnosis.max-per-cookie'(인당 진단 횟수 한도).
+CREATE TABLE app_setting (
+    setting_key   VARCHAR(64)  PRIMARY KEY,
+    setting_value VARCHAR(200) NOT NULL,
+    updated_at    TIMESTAMP    NOT NULL DEFAULT NOW()
+);
+
+CREATE TRIGGER trg_app_setting_updated_at
+    BEFORE UPDATE ON app_setting
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();

@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.stylefit.ratelimit.RateLimitService;
+import com.stylefit.settings.SettingsService;
+import com.stylefit.share.ShareTokenRepository;
 import com.stylefit.vision.PhotoValidationResponse;
 import com.stylefit.vision.PhotoValidationService;
 import lombok.RequiredArgsConstructor;
@@ -43,6 +45,8 @@ public class AnalysisService {
     private final AnalysisResultRepository repository;
     private final PhotoValidationService photoValidationService;
     private final RateLimitService rateLimitService;
+    private final ShareTokenRepository shareTokenRepository;
+    private final SettingsService settingsService;
     private final ObjectMapper objectMapper;
 
     @Value("${stylefit.report.storage-dir}")
@@ -53,6 +57,7 @@ public class AnalysisService {
 
     @Value("${stylefit.ai.base-url:http://168.107.32.164:8000}")
     private String aiBaseUrl;
+
 
     /**
      * AI 모듈(같은 도메인 다른 포트) URL 화이트리스트. 콤마 구분.
@@ -126,6 +131,45 @@ public class AnalysisService {
     }
 
     /**
+     * 사용자가 본인 진단 결과를 삭제한다. 삭제 후 start() 는 다시 PHOTO_REQUIRED 를 반환하므로
+     * 같은 쿠키로 재진단이 가능해진다.
+     *
+     * NOTE: 행을 통째로 지우지 않고 결과 필드만 비우는 soft reset 이다.
+     *       diagnosisCount(누적 진단 횟수)를 보존해야 삭제→재진단으로 인당 한도를 우회할 수 없다.
+     *       status=FAILED 로 두면 start()→PHOTO_REQUIRED, submitPhoto()→재진단 허용으로 동작한다.
+     * - 연관 파일(업로드 얼굴 이미지·생성된 리포트 이미지)과 공유 토큰을 함께 정리한다.
+     * - 결과가 없으면(이미 삭제됨) 조용히 통과(idempotent).
+     * - 일일 호출 한도(rate limit)·누적 진단 횟수는 환불하지 않는다.
+     *
+     * @return 삭제 대상이 실제로 존재했으면 true
+     */
+    @Transactional
+    public boolean deleteResult(String cookieId) {
+        Optional<AnalysisResult> existing =
+                repository.findByCookieIdAndProductCode(cookieId, PRODUCT_CODE);
+        if (existing.isEmpty()) {
+            return false;
+        }
+
+        AnalysisResult entity = existing.get();
+        // 가리키던 결과가 사라지므로 공유 토큰을 먼저 제거 (외부 방문자 404 방지)
+        shareTokenRepository.deleteByCookieId(cookieId);
+        deleteFaceImage(entity.getFaceImagePath());
+        deleteReportImage(entity.getReportImagePath());
+
+        // soft reset — diagnosisCount 는 그대로 두고 결과만 비운다.
+        entity.setStatus(AnalysisStatus.FAILED);
+        entity.setResultJson(null);
+        entity.setRawResultJson(null);
+        entity.setReportImagePath(null);
+        entity.setFaceImagePath(null);
+        repository.save(entity);
+        log.info("analysis result reset by user: cookieId={} keptDiagnosisCount={}",
+                cookieId, entity.getDiagnosisCount());
+        return true;
+    }
+
+    /**
      * 사진을 검증하고 AI 분석을 수행한 뒤 결과를 DB에 저장한다.
      *
      * NOTE: PROCESSING 저장과 COMPLETED 저장이 같은 트랜잭션 안에 있어
@@ -151,6 +195,14 @@ public class AnalysisService {
                         HttpStatus.CONFLICT, "이미 처리 중입니다. 잠시 후 다시 시도해주세요.");
             }
             // FAILED → 재시도 허용 (기존 레코드 재사용)
+        }
+
+        // 인당 누적 진단 횟수 한도 검사 — 새 진단을 시작하기 전에 막는다.
+        // (COMPLETED 재사용/PROCESSING 충돌은 위에서 이미 반환되었으므로 여기 도달 = 새 진단 시도)
+        int maxDiagnosisPerCookie = settingsService.getMaxDiagnosisPerCookie();
+        int priorCount = existing.map(AnalysisResult::getDiagnosisCount).orElse(0);
+        if (priorCount >= maxDiagnosisPerCookie) {
+            return AnalysisResponse.limitExceeded(maxDiagnosisPerCookie);
         }
 
         List<String> warnings = validatePhoto(file);
@@ -209,6 +261,8 @@ public class AnalysisService {
         entity.setRawResultJson(rawJson);
         entity.setStatus(AnalysisStatus.COMPLETED);
         entity.setResultJson(resultJson);
+        // 실제로 진단이 완료된 시점에만 누적 카운트 +1 (검증/AI 실패는 소모 안 함)
+        entity.setDiagnosisCount(priorCount + 1);
         repository.save(entity);
 
         return AnalysisResponse.completed(resultJson, null, null, true);
@@ -641,6 +695,21 @@ public class AnalysisService {
             else log.warn("face image not found for deletion: {}", filename);
         } catch (IOException e) {
             log.warn("face image delete failed: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * 결과 삭제 시 생성해뒀던 리포트 이미지를 삭제한다.
+     * data URI(디스크 저장 실패 폴백)이거나 파일이 없으면 조용히 통과한다.
+     */
+    private void deleteReportImage(String filename) {
+        if (filename == null || filename.startsWith("data:")) return;
+        try {
+            Path path = Paths.get(reportStorageDir).toAbsolutePath().resolve(filename);
+            boolean deleted = Files.deleteIfExists(path);
+            if (deleted) log.info("report image deleted (user delete): {}", filename);
+        } catch (IOException e) {
+            log.warn("report image delete failed: {}", e.getMessage());
         }
     }
 

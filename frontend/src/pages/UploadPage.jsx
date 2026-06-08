@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import useReportCheck from '../hooks/useReportCheck.jsx'
 import { trackEvent } from '../analytics'
+import { withAppBase } from '../paths'
 import './UploadPage.css'
 
 const MAX_DIM = 1280
@@ -126,6 +127,12 @@ export default function UploadPage() {
 
   const handleSubmit = async () => {
     if (!photo) return
+    // 성별 미선택 시 분석 진행 막고 경고 (남/여/미선택 중 하나는 눌러야 함)
+    if (!gender) {
+      trackEvent('submit_blocked', { reason: 'gender_missing' })
+      setWarning('성별을 선택해주세요.')
+      return
+    }
 
     // 한 번 진단 받은 사용자는 다시 분석하지 않고 DB에 저장된 결과를 바로 보여준다
     try {
@@ -168,7 +175,8 @@ export default function UploadPage() {
     }
   }
 
-  const canSubmit = !!photo && !banned && !!gender
+  // 성별 미선택이어도 버튼은 활성화하고, 클릭 시 경고로 안내한다 (사진은 필수)
+  const canSubmit = !!photo && !banned
 
   if (banned) {
     return (
@@ -307,9 +315,7 @@ export default function UploadPage() {
         <div className="up-gcard">
           <div className="up-htitle"><span className="up-mark">✓</span>이런 사진</div>
           <div className="up-gphoto">
-            <svg viewBox="0 0 40 40" fill="none">
-              <path d="M8 21l8 8 16-18" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
+            <img className="up-gphoto-img" src={withAppBase('/goodcase.png')} alt="좋은 사진 예시" loading="lazy" />
           </div>
           <ul>
             <li>정면 얼굴이 잘 보이는 사진</li>
@@ -320,10 +326,7 @@ export default function UploadPage() {
         <div className="up-gcard bad">
           <div className="up-htitle"><span className="up-mark">×</span>피해야 할 사진</div>
           <div className="up-gphoto">
-            <svg viewBox="0 0 40 40" fill="none">
-              <line x1="10" y1="10" x2="30" y2="30" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
-              <line x1="30" y1="10" x2="10" y2="30" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
-            </svg>
+            <img className="up-gphoto-img" src={withAppBase('/badcase.png')} alt="피해야 할 사진 예시" loading="lazy" />
           </div>
           <ul>
             <li>선글라스·마스크 착용</li>

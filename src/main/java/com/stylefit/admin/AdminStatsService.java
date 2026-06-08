@@ -10,13 +10,13 @@ import com.stylefit.purchase.PurchaseIntent;
 import com.stylefit.purchase.PurchaseIntentRepository;
 import com.stylefit.ratelimit.ApiCallQuota;
 import com.stylefit.ratelimit.ApiCallQuotaRepository;
+import com.stylefit.settings.SettingsService;
 import com.stylefit.share.ShareToken;
 import com.stylefit.share.ShareTokenRepository;
 import com.stylefit.survey.Gender;
 import com.stylefit.survey.SatisfactionSurvey;
 import com.stylefit.survey.SatisfactionSurveyRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,6 +26,7 @@ import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 
 @Service
 @RequiredArgsConstructor
@@ -37,10 +38,8 @@ public class AdminStatsService {
     private final UserBehaviorRepository behaviorRepository;
     private final ShareTokenRepository shareRepository;
     private final ApiCallQuotaRepository quotaRepository;
+    private final SettingsService settingsService;
     private final JdbcTemplate jdbcTemplate;
-
-    @Value("${stylefit.ratelimit.report-daily:50}")
-    private int globalDailyLimit;
 
     @Transactional(readOnly = true)
     public Map<String, Object> summary() {
@@ -70,6 +69,24 @@ public class AdminStatsService {
                 "completedWithImage", completedWithImage,
                 "todayCompleted", todayCompleted
         ));
+
+        // 인당 진단 횟수 통계 — analysis_result.diagnosis_count 기준 (삭제·재진단 누적 보존값)
+        long totalRuns = analyses.stream().mapToLong(AnalysisResult::getDiagnosisCount).sum();
+        long usersWithRuns = analyses.stream().filter(a -> a.getDiagnosisCount() > 0).count();
+        int maxPerUser = analyses.stream().mapToInt(AnalysisResult::getDiagnosisCount).max().orElse(0);
+        double avgPerUser = usersWithRuns == 0 ? 0.0 : (double) totalRuns / usersWithRuns;
+        // 진단 횟수별 사용자 분포 (1회, 2회, ...) — TreeMap 으로 키 정렬
+        Map<String, Long> distribution = new TreeMap<>();
+        analyses.stream()
+                .filter(a -> a.getDiagnosisCount() > 0)
+                .forEach(a -> distribution.merge(String.valueOf(a.getDiagnosisCount()), 1L, Long::sum));
+        Map<String, Object> diagnosis = new HashMap<>();
+        diagnosis.put("totalRuns", totalRuns);
+        diagnosis.put("usersWithRuns", usersWithRuns);
+        diagnosis.put("avgPerUser", Math.round(avgPerUser * 100) / 100.0);
+        diagnosis.put("maxPerUser", maxPerUser);
+        diagnosis.put("distribution", distribution);
+        out.put("diagnosis", diagnosis);
 
         List<SatisfactionSurvey> surveys = satisfactionRepository.findAll();
         double avgRating = surveys.stream().mapToInt(s -> s.getRating() == null ? 0 : s.getRating())
@@ -131,10 +148,47 @@ public class AdminStatsService {
         ApiCallQuota today = quotaRepository.findById(LocalDate.now()).orElse(null);
         out.put("quota", Map.of(
                 "today", today == null ? 0 : today.getCallCount(),
-                "globalDailyLimit", globalDailyLimit
+                "globalDailyLimit", settingsService.getReportDaily()
         ));
 
         return out;
+    }
+
+    /** 어드민에서 조회/수정 가능한 운영 설정 현재값. */
+    @Transactional(readOnly = true)
+    public Map<String, Object> getSettings() {
+        Map<String, Object> m = new HashMap<>();
+        m.put("reportDaily", settingsService.getReportDaily());
+        m.put("maxDiagnosisPerCookie", settingsService.getMaxDiagnosisPerCookie());
+        return m;
+    }
+
+    /**
+     * 운영 설정 변경. body 에 포함된 키만 갱신한다.
+     * - reportDaily: 서버 전체 일일 AI 호출 한도 (1~100000)
+     * - maxDiagnosisPerCookie: 인당 누적 진단 횟수 한도 (1~1000)
+     */
+    @Transactional
+    public Map<String, Object> updateSettings(Map<String, Object> body) {
+        if (body == null) body = Map.of();
+        if (body.containsKey("reportDaily")) {
+            int v = clamp(toInt(body.get("reportDaily")), 1, 100000);
+            settingsService.setInt(SettingsService.KEY_REPORT_DAILY, v);
+        }
+        if (body.containsKey("maxDiagnosisPerCookie")) {
+            int v = clamp(toInt(body.get("maxDiagnosisPerCookie")), 1, 1000);
+            settingsService.setInt(SettingsService.KEY_MAX_DIAGNOSIS, v);
+        }
+        return getSettings();
+    }
+
+    private static int toInt(Object o) {
+        if (o instanceof Number n) return n.intValue();
+        return Integer.parseInt(String.valueOf(o).trim());
+    }
+
+    private static int clamp(int v, int min, int max) {
+        return Math.max(min, Math.min(v, max));
     }
 
     @Transactional(readOnly = true)

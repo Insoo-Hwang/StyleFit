@@ -128,11 +128,16 @@ function SummaryGrid({ data }) {
   const sh = data.share || {}
   const bn = data.banned || {}
   const q = data.quota || {}
+  const d = data.diagnosis || {}
   return (
     <div className="ap-summary">
       <StatCard title="총 진단 사용자" value={a.uniqueUsers ?? 0}
         sub={`미완료 ${a.abandoned ?? 0} / 기본리포트 ${a.completedBasicOnly ?? 0} / 이미지 ${a.completedWithImage ?? 0}`} />
       <StatCard title="오늘 완료 진단" value={a.todayCompleted ?? 0} />
+      <StatCard title="인당 평균 진단 횟수" value={d.avgPerUser?.toFixed?.(2) ?? '0'}
+        sub={`진단 경험자 ${d.usersWithRuns ?? 0}명 / 최다 ${d.maxPerUser ?? 0}회`} />
+      <StatCard title="총 진단 실행 횟수" value={d.totalRuns ?? 0}
+        sub="삭제·재진단 포함 누적" />
       <StatCard title="만족도 평균" value={s.avgRating?.toFixed?.(2) ?? '0'}
         sub={`총 ${s.count ?? 0}건 (남 ${s.male ?? 0} / 여 ${s.female ?? 0}, 코멘트 ${s.withComment ?? 0})`} />
       <StatCard title="결제 의향 YES 비율" value={`${p.yesRate ?? 0}%`}
@@ -259,6 +264,114 @@ function AcquisitionSection() {
   )
 }
 
+function DiagnosisDistribution({ data }) {
+  if (!data) return <div className="ap-loading">집계 중...</div>
+  const dist = data.diagnosis?.distribution || {}
+  const entries = Object.entries(dist).sort((a, b) => Number(a[0]) - Number(b[0]))
+  if (entries.length === 0) return <div className="ap-empty">완료된 진단이 없어요</div>
+  const maxCount = Math.max(...entries.map(([, c]) => c))
+  return (
+    <div className="ap-table-wrap">
+      <table className="ap-table">
+        <thead>
+          <tr><th>진단 횟수</th><th>사용자 수</th><th>분포</th></tr>
+        </thead>
+        <tbody>
+          {entries.map(([runs, count]) => {
+            const pct = maxCount === 0 ? 0 : Math.round(count * 1000 / maxCount) / 10
+            return (
+              <tr key={runs}>
+                <td>{runs}회</td>
+                <td>{count}명</td>
+                <td>
+                  <div className="ap-rate-cell">
+                    <div className="ap-rate-bar-wrap">
+                      <div className="ap-rate-bar-fill" style={{ width: `${pct}%`, background: '#2a8f4a' }} />
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function SettingsSection({ onSaved }) {
+  const [form, setForm] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState(null)
+
+  useEffect(() => {
+    fetch('/api/admin/settings')
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => setForm(d ? { reportDaily: d.reportDaily, maxDiagnosisPerCookie: d.maxDiagnosisPerCookie } : null))
+      .catch(() => setForm(null))
+  }, [])
+
+  if (form === null) return <div className="ap-loading">불러오는 중...</div>
+
+  const save = async () => {
+    if (busy) return
+    setBusy(true)
+    setMsg(null)
+    try {
+      const res = await fetch('/api/admin/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reportDaily: Number(form.reportDaily),
+          maxDiagnosisPerCookie: Number(form.maxDiagnosisPerCookie),
+        }),
+      })
+      if (!res.ok) throw new Error('save_failed')
+      const saved = await res.json()
+      setForm({ reportDaily: saved.reportDaily, maxDiagnosisPerCookie: saved.maxDiagnosisPerCookie })
+      setMsg({ kind: 'ok', text: '저장되었습니다. 즉시 적용됩니다.' })
+      onSaved?.()
+    } catch {
+      setMsg({ kind: 'err', text: '저장에 실패했어요.' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="ap-settings">
+      <label className="ap-setting-row">
+        <span className="ap-setting-label">
+          일일 AI 호출 한도 (글로벌)
+          <span className="ap-setting-hint">서버 전체 하루 총 분석 호출 수. 자정에 리셋.</span>
+        </span>
+        <input
+          type="number" min="1" max="100000"
+          value={form.reportDaily}
+          onChange={(e) => setForm((f) => ({ ...f, reportDaily: e.target.value }))}
+        />
+      </label>
+      <label className="ap-setting-row">
+        <span className="ap-setting-label">
+          인당 진단 횟수 한도
+          <span className="ap-setting-hint">쿠키당 누적 진단 횟수. 결과 삭제·재진단해도 보존되는 평생 한도.</span>
+        </span>
+        <input
+          type="number" min="1" max="1000"
+          value={form.maxDiagnosisPerCookie}
+          onChange={(e) => setForm((f) => ({ ...f, maxDiagnosisPerCookie: e.target.value }))}
+        />
+      </label>
+      <div className="ap-settings-actions">
+        <button type="button" className="ap-settings-save" onClick={save} disabled={busy}>
+          {busy ? '저장 중...' : '설정 저장'}
+        </button>
+        {msg && <span className={`ap-settings-msg ${msg.kind}`}>{msg.text}</span>}
+      </div>
+    </div>
+  )
+}
+
 function Dashboard({ onLogout }) {
   const navigate = useNavigate()
   const [summary, setSummary] = useState(null)
@@ -282,6 +395,13 @@ function Dashboard({ onLogout }) {
       .catch(() => setTabData((prev) => ({ ...prev, [activeTab]: [] })))
   }, [activeTab, tabData])
 
+  const refreshSummary = () => {
+    fetch('/api/admin/stats/summary')
+      .then((r) => r.ok ? r.json() : null)
+      .then(setSummary)
+      .catch(() => {})
+  }
+
   const handleLogout = async () => {
     try { await fetch('/api/admin/logout', { method: 'POST' }) } catch { /* ignore */ }
     onLogout()
@@ -303,6 +423,18 @@ function Dashboard({ onLogout }) {
         <h2>리포트 열람 퍼널</h2>
         <p className="ap-section-sub">사용자당 1회 기준. 미완료 = 실패·진행중 합산.</p>
         <FunnelSection data={summary} />
+      </section>
+
+      <section className="ap-section">
+        <h2>진단 횟수 분포</h2>
+        <p className="ap-section-sub">사용자가 지금까지 진단을 몇 번 실행했는지 분포. 삭제 후 재진단도 누적됩니다.</p>
+        <DiagnosisDistribution data={summary} />
+      </section>
+
+      <section className="ap-section">
+        <h2>운영 설정</h2>
+        <p className="ap-section-sub">변경 즉시 적용되며 서버를 재시작해도 유지됩니다.</p>
+        <SettingsSection onSaved={refreshSummary} />
       </section>
 
       <section className="ap-section">

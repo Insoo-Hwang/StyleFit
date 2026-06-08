@@ -34,6 +34,13 @@ public class AnalysisResult {
     @Column(nullable = false, length = 20)
     private AnalysisStatus status = AnalysisStatus.PROCESSING;
 
+    /**
+     * 이 쿠키(사람)가 지금까지 완료한 누적 진단 횟수. 인당 진단 횟수 제한(기본 5회)의 기준값.
+     * 결과 삭제(soft reset) 시에도 이 값은 보존된다 — 삭제로 한도를 우회하지 못하게.
+     */
+    @Column(name = "diagnosis_count", nullable = false)
+    private int diagnosisCount = 0;
+
     @Column(name = "result_json", columnDefinition = "TEXT")
     private String resultJson;
 

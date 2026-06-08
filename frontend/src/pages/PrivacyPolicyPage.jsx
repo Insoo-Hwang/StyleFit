@@ -215,7 +215,7 @@ export default function PrivacyPolicyPage() {
         <button className="lg-footer-back" type="button" onClick={() => navigate(-1)}>
           ← 홈으로 돌아가기
         </button>
-        <p className="lg-footer-effective">시행일: 2026년 〇월 〇일</p>
+        <p className="lg-footer-effective">시행일: 2026년 6월 8일</p>
         <p>© 2026 StyleFit</p>
       </footer>
     </div>

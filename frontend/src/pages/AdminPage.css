@@ -266,3 +266,70 @@
   text-align: center;
   margin: -4px 0 0;
 }
+
+/* 운영 설정 */
+.ap-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  background: #fff;
+  border: 1px solid #e2e7d8;
+  border-radius: 8px;
+  padding: 18px 20px;
+  max-width: 560px;
+}
+.ap-setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.ap-setting-label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #1d211e;
+}
+.ap-setting-hint {
+  font-size: 11px;
+  font-weight: 400;
+  color: #7c8472;
+  max-width: 360px;
+}
+.ap-setting-row input {
+  width: 120px;
+  border: 1px solid #d8ddcb;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 14px;
+  font-family: inherit;
+  background: #fafbf5;
+  text-align: right;
+}
+.ap-setting-row input:focus {
+  outline: none;
+  border-color: #2a3f33;
+  background: #fff;
+}
+.ap-settings-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 4px;
+}
+.ap-settings-save {
+  background: #2a3f33;
+  color: #fff;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.ap-settings-save:disabled { opacity: 0.5; cursor: default; }
+.ap-settings-msg { font-size: 13px; font-weight: 600; }
+.ap-settings-msg.ok { color: #2a8f4a; }
+.ap-settings-msg.err { color: #b8523a; }
