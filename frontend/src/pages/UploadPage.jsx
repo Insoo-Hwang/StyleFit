@@ -8,7 +8,18 @@ import './UploadPage.css'
 const MAX_DIM = 1280
 const MAX_BYTES = 10 * 1024 * 1024            // 10MB
 const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/heic', 'image/heif']
-const ACCEPTED_EXT = /\.(jpe?g|png|heic|heif)$/i
+const ACCEPTED_EXTENSIONS = ['jpg', 'jpeg', 'png', 'heic', 'heif']
+
+function getFileExtension(fileName = '') {
+  const match = fileName.match(/\.([^.]+)$/)
+  return match ? match[1].toLowerCase() : ''
+}
+
+function isSupportedPhotoFile(file) {
+  const ext = getFileExtension(file.name)
+  if (ext) return ACCEPTED_EXTENSIONS.includes(ext)
+  return ACCEPTED_TYPES.includes(file.type)
+}
 
 async function resizeImage(file) {
   let sourceFile = file
@@ -58,7 +69,8 @@ export default function UploadPage() {
   const [warning, setWarning] = useState('')
   const [banned, setBanned] = useState(false)
   const [gender, setGender] = useState(null) // 'male' | 'female' | 'unisex'
-  const fileInputRef = useRef(null)
+  const galleryInputRef = useRef(null)
+  const cameraInputRef = useRef(null)
   const { checkReport, dialog } = useReportCheck('upload_tabbar')
 
   // 사진 처음 첨부된 시각 (망설임 시간 측정용)
@@ -98,31 +110,45 @@ export default function UploadPage() {
     setWarning('')
   }
 
-  const addFiles = (fileList) => {
+  const resetFileInputs = () => {
+    if (galleryInputRef.current) galleryInputRef.current.value = ''
+    if (cameraInputRef.current) cameraInputRef.current.value = ''
+  }
+
+  const addFiles = (fileList, source = 'unknown') => {
     const incoming = Array.from(fileList)[0]
     if (!incoming) return
 
-    const typeOk = ACCEPTED_TYPES.includes(incoming.type) || ACCEPTED_EXT.test(incoming.name)
-    if (!typeOk) {
-      trackEvent('photo_rejected_client', { reason: 'mime_or_ext', file_type: incoming.type || 'unknown' })
+    if (!isSupportedPhotoFile(incoming)) {
+      trackEvent('photo_rejected_client', {
+        reason: 'extension',
+        source,
+        file_ext: getFileExtension(incoming.name) || 'none',
+        file_type: incoming.type || 'unknown',
+      })
       setWarning('JPG, PNG, HEIC 형식의 사진만 업로드할 수 있어요.')
       return
     }
     if (incoming.size > MAX_BYTES) {
       const mb = (incoming.size / 1024 / 1024).toFixed(1)
-      trackEvent('photo_rejected_client', { reason: 'size', size_mb: Number(mb) })
+      trackEvent('photo_rejected_client', { reason: 'size', source, size_mb: Number(mb) })
       setWarning(`사진 용량은 최대 10MB까지 가능해요. (현재 ${mb}MB)`)
       return
     }
 
-    trackEvent('photo_selected', { size_kb: Math.round(incoming.size / 1024) })
+    trackEvent('photo_selected', { source, size_kb: Math.round(incoming.size / 1024) })
     setFile(incoming)
   }
 
   const handleDrop = (e) => {
     e.preventDefault()
     setIsDrag(false)
-    if (e.dataTransfer?.files) addFiles(e.dataTransfer.files)
+    if (e.dataTransfer?.files) addFiles(e.dataTransfer.files, 'drop')
+  }
+
+  const handleFileChange = (e, source) => {
+    addFiles(e.target.files, source)
+    e.target.value = ''
   }
 
   const handleSubmit = async () => {
@@ -250,7 +276,7 @@ export default function UploadPage() {
         </div>
       </div>
 
-      <label
+      <div
         className={`up-drop${isDrag ? ' is-drag' : ''}`}
         onDragEnter={(e) => { e.preventDefault(); setIsDrag(true) }}
         onDragOver={(e) => { e.preventDefault(); setIsDrag(true) }}
@@ -267,7 +293,7 @@ export default function UploadPage() {
               onClick={(e) => {
                 e.preventDefault()
                 setPhoto(prev => { if (prev) URL.revokeObjectURL(prev.url); return null })
-                if (fileInputRef.current) fileInputRef.current.value = ''
+                resetFileInputs()
               }}
             >×</button>
           </div>
@@ -282,18 +308,50 @@ export default function UploadPage() {
               </svg>
             </span>
             <h2>사진을 업로드하세요</h2>
-            <p className="up-hint">탭하여 갤러리에서 선택</p>
-            <p className="up-or">또는 카메라로 바로 촬영</p>
+            <p className="up-hint">갤러리에서 고르거나 바로 촬영하세요</p>
           </>
         )}
+        <div className="up-upload-actions">
+          <button
+            className="up-upload-btn primary"
+            type="button"
+            onClick={() => galleryInputRef.current?.click()}
+          >
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <rect x="4" y="5" width="16" height="14" rx="2" stroke="currentColor" strokeWidth="1.8" />
+              <path d="M7 16l3.2-3.2a1 1 0 0 1 1.4 0L14 15.2l1.2-1.2a1 1 0 0 1 1.4 0L20 17.4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+              <circle cx="15.5" cy="9.5" r="1.4" fill="currentColor" />
+            </svg>
+            갤러리에서 선택
+          </button>
+          <button
+            className="up-upload-btn"
+            type="button"
+            onClick={() => cameraInputRef.current?.click()}
+          >
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M8.5 7l1.2-2h4.6l1.2 2H18a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h2.5z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+              <circle cx="12" cy="13" r="3.2" stroke="currentColor" strokeWidth="1.8" />
+            </svg>
+            카메라로 촬영
+          </button>
+        </div>
         <input
-          ref={fileInputRef}
+          ref={galleryInputRef}
           className="up-file-input"
           type="file"
-          accept="image/jpeg,image/png,image/heic,image/heif,.jpg,.jpeg,.png,.heic,.heif"
-          onChange={(e) => { addFiles(e.target.files); e.target.value = '' }}
+          accept="image/*"
+          onChange={(e) => handleFileChange(e, 'gallery')}
         />
-      </label>
+        <input
+          ref={cameraInputRef}
+          className="up-file-input"
+          type="file"
+          accept="image/*"
+          capture="user"
+          onChange={(e) => handleFileChange(e, 'camera')}
+        />
+      </div>
       <div className="up-meta-row">JPG · PNG · HEIC · 최대 10MB</div>
       {warning && <div className="up-warn-row">⚠ {warning}</div>}
 
